@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.python-version
+.venv/
+venv/
+
+# Lint / type / test caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.hypothesis/
+
+# Mutation testing (mutmut 3.x) — sandbox copy + cache + benchmark autosaves
+mutants/
+.mutmut-cache
+html/
+.benchmarks/
+
+# CI ephemeral
+.uv-cache/
+requirements.ci.txt
+
+# Build artifacts
+build/
+dist/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit
+.env
+.env.local
+!.env.example
+tools/guards/repo_text_policy.local
+
+# Orchestrator — private build-orchestration scaffolding, not part of the OSS product
+.orchestrator/
+
+# AI-agent + RAG local caches — machine-local, never source of truth
+.claude/
+.repowise/
+docs/session.txt
+pitwall_RESUME_EVIDENCE.md
+*_EVIDENCE_PITWALL.md
+/.remember/INITIATIVE-2-PROGRESS.md
+
+# Local code-intelligence tool indexes / generated artifacts
+.codegraph/
+.serena/
+.potpie/
+graphify-out/
+.code-intel-eval/repomix-output/
+.code-intel-eval/repomix-skill/
+.code-intel-eval/*.json
+.code-intel-eval/*.jsonl
+.code-intel-eval/*.log
+.code-intel-eval/*.pid
+repomix-output.*
+index.scip
+**/*.tsbuildinfo
+
+# Secret/env files for local tooling and pack generation
+.env.*.local
+.npmrc
+cc.env
+*.secrets.env
+.dev.vars
+.dev.vars.*
+
+# Session-local AI/code-intel tooling artifacts (never publish)
+.mcp.json
+.graphifyignore
+.repomixignore
+PROJECT-CONTEXT.md
+.code-intel-eval/
+.repowise/
+.claude/
+.live-admin-secret
+artifacts/

@@ -1,0 +1,45 @@
+{
+  "authorization": {
+    "patterns": [
+      "src/pitwall/api/app.py",
+      "src/pitwall/api/admin/*.py",
+      "src/pitwall/security/*.py"
+    ],
+    "minimum_line_percent": 70,
+    "minimum_branch_percent": 60
+  },
+  "cleanup": {
+    "patterns": ["src/pitwall/r2_staging_cleanup.py"],
+    "minimum_line_percent": 70,
+    "minimum_branch_percent": 60
+  },
+  "leases": {
+    "patterns": ["src/pitwall/leases/*.py", "src/pitwall/api/leases/*.py"],
+    "minimum_line_percent": 70,
+    "minimum_branch_percent": 60
+  },
+  "retention_and_deletion": {
+    "patterns": ["src/pitwall/retention/*.py"],
+    "minimum_line_percent": 80,
+    "minimum_branch_percent": 70
+  },
+  "spending": {
+    "patterns": ["src/pitwall/cost/*.py"],
+    "minimum_line_percent": 75,
+    "minimum_branch_percent": 65
+  },
+  "webhooks": {
+    "patterns": [
+      "src/pitwall/api/routes/webhook_subscriptions.py",
+      "src/pitwall/webhook_dispatcher/*.py",
+      "src/pitwall/webhook_receiver/*.py"
+    ],
+    "minimum_line_percent": 75,
+    "minimum_branch_percent": 65
+  },
+  "worker_boundary": {
+    "patterns": ["src/pitwall/worker.py", "src/pitwall/workers/*.py"],
+    "minimum_line_percent": 70,
+    "minimum_branch_percent": 60
+  }
+}

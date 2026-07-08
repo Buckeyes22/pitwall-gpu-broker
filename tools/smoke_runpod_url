@@ -1,0 +1,110 @@
+#!/bin/bash
+# smoke_runpod_url — live smoke test for a RunPod OpenAI-compatible endpoint.
+#
+# Calls the /chat/completions URL and verifies a non-empty completion.
+# Requires RUNPOD_API_KEY in environment.
+#
+# Usage:
+#     ./tools/smoke_runpod_url
+#         # uses defaults: granite-4-0-h-small public endpoint
+#     RUNPOD_API_KEY=... ./tools/smoke_runpod_url
+#     ./tools/smoke_runpod_url --url https://api.runpod.ai/v2/granite-4-0-h-small/openai/v1
+#         --model granite-4-0-h-small
+#
+# Exit 0 on success, non-zero on failure.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+DEFAULT_URL="https://api.runpod.ai/v2/granite-4-0-h-small/openai/v1"
+DEFAULT_MODEL="granite-4-0-h-small"
+
+log() {
+    printf '[smoke_runpod_url] %s\n' "$*" >&2
+}
+
+fail() {
+    printf '[smoke_runpod_url] FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+# Parse arguments
+URL="${DEFAULT_URL}"
+MODEL="${DEFAULT_MODEL}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --url)
+            URL="$2"
+            shift 2
+            ;;
+        --model)
+            MODEL="$2"
+            shift 2
+            ;;
+        --help|-h)
+            printf 'Usage: %s [--url URL] [--model MODEL]\n' "$0"
+            printf 'Defaults: --url %s --model %s\n' "${DEFAULT_URL}" "${DEFAULT_MODEL}"
+            exit 0
+            ;;
+        *)
+            fail "Unknown argument: $1"
+            ;;
+    esac
+done
+
+API_KEY="${RUNPOD_API_KEY:-}"
+if [[ -z "${API_KEY}" ]]; then
+    fail "RUNPOD_API_KEY environment variable is required"
+fi
+
+log "Calling: ${URL}/chat/completions"
+log "Model: ${MODEL}"
+
+RESPONSE=$(mktemp)
+cleanup() {
+    rm -f "${RESPONSE}"
+}
+trap cleanup EXIT
+
+HTTP_STATUS=$(curl -s -w "%{http_code}" -o "${RESPONSE}" \
+    -X POST "${URL}/chat/completions" \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"model\": \"${MODEL}\",
+        \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in one word.\"}],
+        \"max_tokens\": 20,
+        \"temperature\": 0.0
+    }")
+
+if [[ "${HTTP_STATUS}" -eq 0 ]]; then
+    fail "curl failed to connect"
+fi
+
+if [[ "${HTTP_STATUS}" -ge 400 ]]; then
+    fail "HTTP ${HTTP_STATUS}: $(cat "${RESPONSE}")"
+fi
+
+# Verify response has non-empty completion
+COMPLETION=$(python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+choices = data.get('choices', [])
+if not choices:
+    print('NO_CHOICES', file=sys.stderr)
+    sys.exit(1)
+content = choices[0].get('message', {}).get('content', '')
+if not content or content.strip() == '':
+    print('EMPTY_COMPLETION', file=sys.stderr)
+    sys.exit(1)
+print(content)
+" < "${RESPONSE}") || {
+    fail "Response validation failed: ${COMPLETION}"
+}
+
+log "Completion: ${COMPLETION}"
+log "Smoke check passed"
+exit 0

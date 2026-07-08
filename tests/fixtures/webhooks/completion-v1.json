@@ -1,0 +1,6 @@
+{
+  "secret": "golden-webhook-secret",
+  "timestamp": 1784318400,
+  "canonical_body": "{\"consumer\":\"example-consumer\",\"data\":{\"cost_usd\":\"0.012345\",\"result\":{\"text\":\"done\"}},\"delivery_id\":\"dly_01HXYZ\",\"event\":\"workload.completed\",\"occurred_at\":\"2026-07-17T20:00:00Z\",\"version\":\"1\",\"workload_id\":\"wkl_01HXYZ\"}",
+  "signature": "t=1784318400,v1=c127644cdb248e5fe8e3746480057f20d9c1edd837a66ac8159d9aa0189e33f7"
+}

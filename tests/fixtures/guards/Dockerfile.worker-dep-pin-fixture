@@ -1,0 +1,11 @@
+# Fixture: Dockerfile.worker fixture with UNPINNED ML packages
+# This file is a TEST FIXTURE only - it should never be scanned by pre-commit
+# as it's in tests/fixtures/, not in worker-owned paths.
+
+FROM python:3.11-slim
+
+RUN pip install torch torchaudio transformers
+
+WORKDIR /app
+COPY . .
+CMD ["python", "worker.py"]

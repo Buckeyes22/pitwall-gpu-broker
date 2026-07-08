@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""smoke_fallback_drill — live drill that verifies OpenAI proxy fallback behavior.
+
+Uses the stock OpenAI SDK (openai>=1.40) and no Pitwall-specific client code.
+Forces primary provider failure via X-Pitwall-Drill header and verifies the
+Public Endpoint fallback by checking the X-Pitwall-Provider-ID response header.
+
+Usage:
+    PITWALL_URL=http://pitwall.tail-net:8080 ./tools/smoke_fallback_drill
+    PITWALL_URL=http://localhost:8080 ./tools/smoke_fallback_drill --capability llm.qwen3-32b
+    PITWALL_URL=http://localhost:8080 ./tools/smoke_fallback_drill --capability llm.qwen3-32b --model qwen3-32b
+
+Exit 0 on success, non-zero on failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+
+def _main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Drill test for Pitwall OpenAI-compatible proxy fallback.",
+    )
+    parser.add_argument(
+        "--capability",
+        default="llm.qwen3-32b",
+        help="Capability name to test (default: llm.qwen3-32b)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Model name to use in request (default: same as capability)",
+    )
+    parser.add_argument(
+        "--pitwall-url",
+        default=os.environ.get("PITWALL_URL", "http://pitwall.tail-net:8080"),
+        dest="pitwall_url",
+        help="Pitwall base URL (default: http://pitwall.tail-net:8080)",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("RUNPOD_API_KEY", ""),
+        help="RUNPOD_API_KEY (default: from RUNPOD_API_KEY env var)",
+    )
+    args = parser.parse_args()
+
+    if not args.api_key:
+        print(
+            "[smoke_fallback_drill] FAIL: RUNPOD_API_KEY environment variable is required",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    model = args.model or args.capability
+
+    base_url = f"{args.pitwall_url}/v1/openai/{args.capability}/v1"
+
+    print(f"[smoke_fallback_drill] Base URL: {base_url}")
+    print(f"[smoke_fallback_drill] Model: {model}")
+    print("[smoke_fallback_drill] Drill mode: skip-primary")
+
+    try:
+        import httpx
+    except ImportError:
+        print(
+            "[smoke_fallback_drill] FAIL: httpx package not installed. Install with: pip install httpx",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    headers = {
+        "Authorization": f"Bearer {args.api_key}",
+        "Content-Type": "application/json",
+        "X-Pitwall-Drill": "skip-primary",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": "Say hello in one word."},
+        ],
+        "max_tokens": 20,
+        "temperature": 0.0,
+    }
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                f"{base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+    except Exception as exc:
+        print(f"[smoke_fallback_drill] FAIL: Request failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    provider_id = response.headers.get("X-Pitwall-Provider-ID")
+    workload_id = response.headers.get("X-Pitwall-Workload-ID")
+
+    print(f"[smoke_fallback_drill] Status: {response.status_code}")
+    print(f"[smoke_fallback_drill] X-Pitwall-Provider-ID: {provider_id}")
+    print(f"[smoke_fallback_drill] X-Pitwall-Workload-ID: {workload_id}")
+
+    if response.status_code >= 500:
+        print(f"[smoke_fallback_drill] FAIL: Server error {response.status_code}", file=sys.stderr)
+        try:
+            print(f"[smoke_fallback_drill] Response: {response.text[:500]}", file=sys.stderr)
+        except Exception:
+            pass
+        sys.exit(1)
+
+    if response.status_code >= 400:
+        print(f"[smoke_fallback_drill] FAIL: Client error {response.status_code}", file=sys.stderr)
+        try:
+            print(f"[smoke_fallback_drill] Response: {response.text[:500]}", file=sys.stderr)
+        except Exception:
+            pass
+        sys.exit(1)
+
+    if not provider_id:
+        print("[smoke_fallback_drill] FAIL: X-Pitwall-Provider-ID header missing", file=sys.stderr)
+        sys.exit(1)
+
+    if not workload_id:
+        print("[smoke_fallback_drill] FAIL: X-Pitwall-Workload-ID header missing", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        data = response.json()
+    except Exception as exc:
+        print(f"[smoke_fallback_drill] FAIL: Could not parse JSON response: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not data.get("choices"):
+        print("[smoke_fallback_drill] FAIL: No choices in response", file=sys.stderr)
+        sys.exit(1)
+
+    content = data["choices"][0].get("message", {}).get("content", "")
+    print(f"[smoke_fallback_drill] Completion: {content}")
+    print(f"[smoke_fallback_drill] Fallback drill passed: used provider {provider_id}")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    _main()

@@ -1,0 +1,14 @@
+version: 1
+policies:
+  - id: provider.no-static-r2-env
+    target: provider
+    description: Pod lease providers must not inject long-lived R2 credentials into pod env.
+    when:
+      - path: provider_type
+        operator: equals
+        value: pod_lease
+    rules:
+      - path: config.env_vars
+        operator: contains_none
+        value: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "R2_ACCESS_KEY", "R2_ACCESS_KEY_ID", "R2_SECRET_KEY", "R2_SECRET_ACCESS_KEY"]
+        message: pod lease provider injects static R2 credentials

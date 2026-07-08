@@ -1,0 +1,331 @@
+#!/bin/bash
+# benchmark_embedding_latency — deterministic 100-query direct-vs-Pitwall timing
+#                              and JSON artifact output.
+#
+# Runs 100 BGE-M3 query embeddings against both the direct RunPod LB endpoint
+# and through Pitwall's /v1/inference route, then compares p95 latencies.
+#
+# Usage:
+#     ./benchmark_embedding_latency
+#         # uses defaults: direct=eptest00000000, pitwall=http://pitwall.tail-net:8080
+#     DIRECT_ENDPOINT_ID=abc123 PITWALL_URL=http://localhost:8080 ./benchmark_embedding_latency
+#     ./benchmark_embedding_latency --direct-endpoint-id abc123 --pitwall-url http://localhost:8080
+#     ./benchmark_embedding_latency --output /tmp/benchmark.json
+#
+# Exit 0 if Pitwall p95 latency is within 10% of direct p95 latency.
+# Exit 1 if the comparison fails or any request errors out.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+DEFAULT_DIRECT_ENDPOINT_ID="eptest00000000"
+DEFAULT_PITWALL_URL="http://pitwall.tail-net:8080"
+DEFAULT_NUM_QUERIES=100
+DEFAULT_TIMEOUT_S=300
+
+log() {
+    printf '[benchmark_embedding_latency] %s\n' "$*" >&2
+}
+
+fail() {
+    printf '[benchmark_embedding_latency] FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+DIRECT_ENDPOINT_ID="${DIRECT_ENDPOINT_ID:-${DEFAULT_DIRECT_ENDPOINT_ID}}"
+PITWALL_URL="${PITWALL_URL:-${DEFAULT_PITWALL_URL}}"
+NUM_QUERIES="${NUM_QUERIES:-${DEFAULT_NUM_QUERIES}}"
+TIMEOUT_S="${TIMEOUT_S:-${DEFAULT_TIMEOUT_S}}"
+OUTPUT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --direct-endpoint-id)
+            DIRECT_ENDPOINT_ID="$2"
+            shift 2
+            ;;
+        --pitwall-url)
+            PITWALL_URL="$2"
+            shift 2
+            ;;
+        --num-queries)
+            NUM_QUERIES="$2"
+            shift 2
+            ;;
+        --timeout)
+            TIMEOUT_S="$2"
+            shift 2
+            ;;
+        --output)
+            OUTPUT_FILE="$2"
+            shift 2
+            ;;
+        --help|-h)
+            printf 'Usage: %s [options]\n' "$0"
+            printf 'Options:\n'
+            printf '  --direct-endpoint-id ID   RunPod LB endpoint ID (default: %s)\n' "${DEFAULT_DIRECT_ENDPOINT_ID}"
+            printf '  --pitwall-url URL         Pitwall base URL (default: %s)\n' "${DEFAULT_PITWALL_URL}"
+            printf '  --num-queries N           Number of queries to run (default: %s)\n' "${DEFAULT_NUM_QUERIES}"
+            printf '  --timeout SECONDS         Request timeout (default: %s)\n' "${DEFAULT_TIMEOUT_S}"
+            printf '  --output FILE             JSON output file (default: stdout)\n'
+            exit 0
+            ;;
+        *)
+            fail "Unknown argument: $1"
+            ;;
+    esac
+done
+
+RUNPOD_API_KEY="${RUNPOD_API_KEY:-}"
+if [[ -z "${RUNPOD_API_KEY}" ]]; then
+    fail "RUNPOD_API_KEY environment variable is required"
+fi
+
+DIRECT_BASE_URL="https://${DIRECT_ENDPOINT_ID}.api.runpod.ai"
+DIRECT_EMBED_URL="${DIRECT_BASE_URL}/embed"
+PITWALL_INFERENCE_URL="${PITWALL_URL}/v1/inference"
+
+log "Direct endpoint: ${DIRECT_EMBED_URL}"
+log "Pitwall URL:     ${PITWALL_INFERENCE_URL}"
+log "Num queries:     ${NUM_QUERIES}"
+log "Timeout:         ${TIMEOUT_S}s"
+
+RESPONSE=$(mktemp)
+DIRECT_TIMES=$(mktemp)
+PITWALL_TIMES=$(mktemp)
+cleanup() {
+    rm -f "${RESPONSE}" "${DIRECT_TIMES}" "${PITWALL_TIMES}"
+}
+trap cleanup EXIT
+
+run_direct_query() {
+    local idx=$1
+    local start end latency http_status
+
+    start=$(date +%s%N)
+
+    http_status=$(curl -s -w "%{http_code}" -o "${RESPONSE}" \
+        -X POST "${DIRECT_EMBED_URL}" \
+        -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+        -H "Content-Type: application/json" \
+        --max-time "${TIMEOUT_S}" \
+        -d "{
+            \"texts\": [\"benchmark query ${idx}\"],
+            \"return_dense\": true,
+            \"return_sparse\": false,
+            \"return_colbert\": false
+        }")
+
+    end=$(date +%s%N)
+
+    if [[ "${http_status}" -eq 0 ]]; then
+        echo "CURL_FAILED" >&2
+        return 1
+    fi
+
+    if [[ "${http_status}" -ge 400 ]]; then
+        echo "HTTP_${http_status}: $(cat "${RESPONSE}")" >&2
+        return 1
+    fi
+
+    latency=$(( (end - start) / 1000000 ))
+    echo "${latency}"
+    return 0
+}
+
+run_pitwall_query() {
+    local idx=$1
+    local start end latency http_status
+
+    start=$(date +%s%N)
+
+    http_status=$(curl -s -w "%{http_code}" -o "${RESPONSE}" \
+        -X POST "${PITWALL_INFERENCE_URL}" \
+        -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+        -H "Content-Type: application/json" \
+        --max-time "${TIMEOUT_S}" \
+        -d "{
+            \"capability\": \"embedding.bge-m3\",
+            \"texts\": [\"benchmark query ${idx}\"],
+            \"return_dense\": true,
+            \"return_sparse\": false,
+            \"return_colbert\": false
+        }")
+
+    end=$(date +%s%N)
+
+    if [[ "${http_status}" -eq 0 ]]; then
+        echo "CURL_FAILED" >&2
+        return 1
+    fi
+
+    if [[ "${http_status}" -ge 400 ]]; then
+        echo "HTTP_${http_status}: $(cat "${RESPONSE}")" >&2
+        return 1
+    fi
+
+    latency=$(( (end - start) / 1000000 ))
+    echo "${latency}"
+    return 0
+}
+
+calc_p95() {
+    local times_file=$1
+    python3 -c "
+import json, sys
+times = [int(l.strip()) for l in open('${times_file}') if l.strip().isdigit()]
+if not times:
+    print('0')
+    sys.exit(0)
+times.sort()
+idx = int(len(times) * 0.95) - 1
+idx = max(0, min(idx, len(times) - 1))
+print(times[idx])
+"
+}
+
+log "Running ${NUM_QUERIES} direct queries..."
+failed=0
+for i in $(seq 1 "${NUM_QUERIES}"); do
+    if (( i % 20 == 0 )); then
+        log "  direct progress: ${i}/${NUM_QUERIES}"
+    fi
+    result=$(run_direct_query "${i}" 2>&1) || {
+        log "Direct query ${i} failed: ${result}"
+        failed=$((failed + 1))
+        continue
+    }
+    echo "${result}" >> "${DIRECT_TIMES}"
+done
+
+direct_count=$(wc -l < "${DIRECT_TIMES}" | tr -d ' ')
+log "Direct completed: ${direct_count} successful, ${failed} failed"
+
+if [[ "${direct_count}" -lt 10 ]]; then
+    fail "Not enough successful direct queries (${direct_count}), need at least 10"
+fi
+
+log "Running ${NUM_QUERIES} Pitwall queries..."
+failed=0
+for i in $(seq 1 "${NUM_QUERIES}"); do
+    if (( i % 20 == 0 )); then
+        log "  pitwall progress: ${i}/${NUM_QUERIES}"
+    fi
+    result=$(run_pitwall_query "${i}" 2>&1) || {
+        log "Pitwall query ${i} failed: ${result}"
+        failed=$((failed + 1))
+        continue
+    }
+    echo "${result}" >> "${PITWALL_TIMES}"
+done
+
+pitwall_count=$(wc -l < "${PITWALL_TIMES}" | tr -d ' ')
+log "Pitwall completed: ${pitwall_count} successful, ${failed} failed"
+
+if [[ "${pitwall_count}" -lt 10 ]]; then
+    fail "Not enough successful Pitwall queries (${pitwall_count}), need at least 10"
+fi
+
+direct_p95=$(calc_p95 "${DIRECT_TIMES}")
+pitwall_p95=$(calc_p95 "${PITWALL_TIMES}")
+
+direct_avg=$(python3 -c "
+times = [int(l.strip()) for l in open('${DIRECT_TIMES}') if l.strip().isdigit()]
+print(int(sum(times) / len(times))) if times else print(0)
+")
+pitwall_avg=$(python3 -c "
+times = [int(l.strip()) for l in open('${PITWALL_TIMES}') if l.strip().isdigit()]
+print(int(sum(times) / len(times))) if times else print(0)
+")
+
+direct_min=$(python3 -c "
+times = [int(l.strip()) for l in open('${DIRECT_TIMES}') if l.strip().isdigit()]
+print(min(times)) if times else print(0)
+")
+pitwall_min=$(python3 -c "
+times = [int(l.strip()) for l in open('${PITWALL_TIMES}') if l.strip().isdigit()]
+print(min(times)) if times else print(0)
+")
+
+direct_max=$(python3 -c "
+times = [int(l.strip()) for l in open('${DIRECT_TIMES}') if l.strip().isdigit()]
+print(max(times)) if times else print(0)
+")
+pitwall_max=$(python3 -c "
+times = [int(l.strip()) for l in open('${PITWALL_TIMES}') if l.strip().isdigit()]
+print(max(times)) if times else print(0)
+")
+
+overhead_pct=$(python3 -c "
+if ${direct_p95} == 0:
+    print('N/A')
+else:
+    overhead = (${pitwall_p95} - ${direct_p95}) / ${direct_p95} * 100
+    print(f'{overhead:.1f}')
+")
+
+pass=$(
+    python3 -c "
+direct_p95 = ${direct_p95}
+pitwall_p95 = ${pitwall_p95}
+if direct_p95 == 0:
+    print('false')
+else:
+    ratio = pitwall_p95 / direct_p95
+    # Within 10% means pitwall is between 0.90x and 1.10x of direct
+    # But we want pitwall to be <= 1.10x (within 10% overhead)
+    print('true' if ratio <= 1.10 else 'false')
+"
+)
+
+log "=== Results ==="
+log "Direct p95: ${direct_p95}ms, avg: ${direct_avg}ms, min: ${direct_min}ms, max: ${direct_max}ms"
+log "Pitwall p95: ${pitwall_p95}ms, avg: ${pitwall_avg}ms, min: ${pitwall_min}ms, max: ${pitwall_max}ms"
+log "Pitwall overhead vs direct p95: ${overhead_pct}%"
+
+artifact=$(python3 -c "
+import json
+from datetime import datetime
+artifact = {
+    'timestamp': datetime.utcnow().isoformat() + 'Z',
+    'direct_endpoint_id': '${DIRECT_ENDPOINT_ID}',
+    'pitwall_url': '${PITWALL_URL}',
+    'num_queries': ${NUM_QUERIES},
+    'direct': {
+        'count': ${direct_count},
+        'p95_ms': ${direct_p95},
+        'avg_ms': ${direct_avg},
+        'min_ms': ${direct_min},
+        'max_ms': ${direct_max}
+    },
+    'pitwall': {
+        'count': ${pitwall_count},
+        'p95_ms': ${pitwall_p95},
+        'avg_ms': ${pitwall_avg},
+        'min_ms': ${pitwall_min},
+        'max_ms': ${pitwall_max}
+    },
+    'comparison': {
+        'overhead_pct': ${overhead_pct},
+        'pass': ${pass}
+    }
+}
+print(json.dumps(artifact, indent=2))
+")
+
+if [[ -n "${OUTPUT_FILE}" ]]; then
+    echo "${artifact}" > "${OUTPUT_FILE}"
+    log "Artifact written to: ${OUTPUT_FILE}"
+fi
+
+echo "${artifact}"
+
+if [[ "${pass}" == "true" ]]; then
+    log "Benchmark PASSED: Pitwall p95 within 10% of direct"
+    exit 0
+else
+    log "Benchmark FAILED: Pitwall p95 not within 10% of direct"
+    exit 1
+fi

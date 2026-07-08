@@ -1,0 +1,13 @@
+capabilities:
+  - name: embedding.demo
+    version: 1.0.0
+    class: embedding
+    description: Local dry-run onboarding capability. Replace before production use.
+    cost_mode: per_second
+    input_schema:
+      type: object
+      properties:
+        texts:
+          type: array
+    output_schema:
+      type: object

@@ -1,0 +1,14 @@
+version: 1
+policies:
+  - id: provider.pod-lease-readiness
+    target: provider
+    description: Pod lease providers must require runtime, port mapping, and probe readiness signals.
+    when:
+      - path: provider_type
+        operator: equals
+        value: pod_lease
+    rules:
+      - path: config.readiness.required_signals
+        operator: contains_all
+        value: ["runtime", "port_mappings", "probe_2xx"]
+        message: pod lease provider readiness policy is missing required signals

@@ -1,0 +1,19 @@
+# Code owners
+
+# Global owner rule — @buckeyes22 is the project maintainer.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#example-of-a-codeowners-file
+* @buckeyes22
+
+# Explicit sensitive surfaces. A second eligible owner is a documented external
+# release gate; until assigned these retain the lead maintainer as sole owner.
+/.github/workflows/ @buckeyes22
+/.github/CODEOWNERS @buckeyes22
+/SECURITY.md @buckeyes22
+/GOVERNANCE.md @buckeyes22
+/MAINTAINERS.md @buckeyes22
+/docker/ @buckeyes22
+/db/migrations/ @buckeyes22
+/src/pitwall/api/admin/ @buckeyes22
+/src/pitwall/security/ @buckeyes22
+/tools/security/ @buckeyes22
+/scripts/release/ @buckeyes22

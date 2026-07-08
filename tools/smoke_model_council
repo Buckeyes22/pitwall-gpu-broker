@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""smoke_model_council — live smoke test for Pitwall MCP server inference routing.
+
+Invokes pitwall_submit_inference through the registered MCP server using stdio
+transport. Verifies the tool is reachable, returns a structured response, and
+exercises the model-council fan-out path.
+
+Usage:
+    python tools/smoke_model_council
+    python tools/smoke_model_council --capability embedding.bge-m3 --texts "hello world"
+
+Exit 0 on success, non-zero on failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import sys
+
+
+def _is_live() -> bool:
+    try:
+        from pitwall.live import is_live as _is_live
+    except ImportError:
+        return False
+    return _is_live()
+
+
+async def _run_smoke(args: argparse.Namespace) -> int:
+    try:
+        from mcp.client.session import ClientSession
+        from mcp.client.stdio import StdioServerParameters, stdio_client
+    except ImportError as exc:
+        print(
+            f"[smoke_model_council] FAIL: mcp package not installed: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    env: dict[str, str] = {
+        "PITWALL_MCP_TRANSPORT": "stdio",
+        "RUNPOD_API_KEY": args.api_key or os.environ.get("RUNPOD_API_KEY", ""),
+        "DATABASE_URL": args.database_url or os.environ.get("DATABASE_URL", ""),
+        "REDIS_URL": args.redis_url or os.environ.get("REDIS_URL", ""),
+    }
+
+    if not env["RUNPOD_API_KEY"]:
+        print(
+            "[smoke_model_council] FAIL: RUNPOD_API_KEY environment variable is required",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not env["DATABASE_URL"]:
+        print(
+            "[smoke_model_council] FAIL: DATABASE_URL environment variable is required",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not env["REDIS_URL"]:
+        print(
+            "[smoke_model_council] FAIL: REDIS_URL environment variable is required",
+            file=sys.stderr,
+        )
+        return 1
+
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "pitwall.mcp"],
+        env=env,
+        cwd=args.repo_root or os.getcwd(),
+    )
+
+    try:
+        async with stdio_client(server_params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+
+                result = await session.list_tools()
+                tool_names = [t.name for t in result.tools]
+
+                if "pitwall_submit_inference" not in tool_names:
+                    print(
+                        f"[smoke_model_council] FAIL: pitwall_submit_inference not found in tool registry. Found: {tool_names}",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+                if not _is_live():
+                    print(
+                        "[smoke_model_council] SKIP: live inference call skipped (RUNPOD_LIVE=1 not set). "
+                        "MCP server is reachable and pitwall_submit_inference is registered.",
+                        file=sys.stderr,
+                    )
+                    return 0
+
+                print("[smoke_model_council] Calling pitwall_submit_inference")
+                print(f"[smoke_model_council]   capability: {args.capability}")
+                print(f"[smoke_model_council]   texts: {args.texts}")
+                print(f"[smoke_model_council]   dry_run: {args.dry_run}")
+
+                call_result = await session.call_tool(
+                    "pitwall_submit_inference",
+                    {
+                        "capability_id": args.capability,
+                        "dry_run": args.dry_run,
+                        "texts": args.texts,
+                    },
+                )
+
+                if not call_result.content:
+                    print(
+                        "[smoke_model_council] FAIL: empty response from pitwall_submit_inference",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+                response_text = call_result.content[0].text
+                print(f"[smoke_model_council] Response: {response_text}")
+
+                if call_result.is_error:
+                    print(
+                        f"[smoke_model_council] FAIL: tool returned is_error=True: {response_text}",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+                print("[smoke_model_council] Smoke check passed")
+                return 0
+
+    except Exception as exc:
+        print(
+            f"[smoke_model_council] FAIL: MCP call failed: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+
+def _main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Smoke test for Pitwall MCP server inference routing.",
+    )
+    parser.add_argument(
+        "--capability",
+        default="embedding.bge-m3",
+        help="Capability name to test (default: embedding.bge-m3)",
+    )
+    parser.add_argument(
+        "--texts",
+        default=["hello world"],
+        nargs="+",
+        dest="texts",
+        help="Text inputs for inference (default: hello world)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        dest="dry_run",
+        help="Whether to run in dry-run mode (default: True)",
+    )
+    parser.add_argument(
+        "--repo-root",
+        default=None,
+        dest="repo_root",
+        help="Repository root directory (default: current working directory)",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        dest="api_key",
+        help="RUNPOD_API_KEY (default: from RUNPOD_API_KEY env var)",
+    )
+    parser.add_argument(
+        "--database-url",
+        default=None,
+        dest="database_url",
+        help="DATABASE_URL (default: from DATABASE_URL env var)",
+    )
+    parser.add_argument(
+        "--redis-url",
+        default=None,
+        dest="redis_url",
+        help="REDIS_URL (default: from REDIS_URL env var)",
+    )
+    args = parser.parse_args()
+
+    exit_code = asyncio.run(_run_smoke(args))
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    _main()

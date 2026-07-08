@@ -1,0 +1,12 @@
+# Fixture: Dockerfile.worker fixture that uses the supported HF CLI
+# This file is a TEST FIXTURE only - it should never be scanned by pre-commit
+# as it's in tests/fixtures/, not in worker-owned paths.
+
+FROM python:3.11-slim
+
+RUN pip install huggingface_hub && \
+    hf download meta-llama/Llama-2-7b --cache-dir /tmp/model-cache
+
+WORKDIR /app
+COPY . .
+CMD ["python", "worker.py"]

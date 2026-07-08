@@ -1,0 +1,50 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.10
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: python-policy
+        name: Python policy guards (type:ignore, noqa, except)
+        entry: python tools/guards/python_policy.py
+        language: python
+        types: [python]
+        pass_filenames: true
+
+      - id: repo-text-policy
+        name: Repo text policy (banned strings L11, L12)
+        entry: python tools/guards/repo_text_policy.py
+        language: python
+        types: [text]
+        exclude: ^(docs/OPEN-SOURCE-RELEASE-IMPLEMENTATION-PLAN\.md|docs/api/openapi-baseline\.json)$
+        pass_filenames: true
+
+      - id: deprecated-hf-cli-worker
+        name: "Guardrail: no deprecated HF CLI in worker paths"
+        entry: python tools/guards/deprecated_hf_cli.py
+        language: python
+        files: ^(docker/(Dockerfile\.worker-[^/]+|worker-[^/]+)|src/pitwall/(worker\.py|workers/.*))
+        pass_filenames: false
+
+      - id: dep-pin-checker
+        name: "Guardrail: ML packages must be pinned (==) in worker images (L13)"
+        entry: python tools/guards/dep_pin_checker.py
+        language: python
+        files: ^docker/Dockerfile\.worker-
+        pass_filenames: false
+
+      - id: forbidden-imports
+        name: "Guardrail: no UIO imports or pipeline_cost in runtime"
+        entry: python tools/guards/forbidden_imports.py
+        language: python
+        pass_filenames: false
+
+      - id: detect-secrets
+        name: "Guardrail: deterministic repository-wide secret scan"
+        entry: uv run python tools/security/check_secrets.py
+        language: system
+        pass_filenames: false

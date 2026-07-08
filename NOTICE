@@ -1,0 +1,9 @@
+Pitwall
+Copyright 2026 The Pitwall Authors
+
+Pitwall is an independent open-source broker for use with RunPod-hosted GPU workloads and is not affiliated with RunPod.
+
+Bundled dependencies are licensed under their own terms. Published service
+images include unmodified Paramiko (LGPL-2.1), certifi (MPL-2.0), and tqdm
+(MPL-2.0 AND MIT). Their source-form Python files and upstream license texts are
+preserved in the images. See the project SBOM under docs/sbom/ for exact versions.

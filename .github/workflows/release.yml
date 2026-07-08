@@ -1,0 +1,356 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    uses: ./.github/workflows/release-readiness.yml
+    with:
+      release_candidate: true
+    secrets: inherit
+
+  package:
+    needs: readiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --frozen --extra dev
+      - name: Validate tag, version, date, and clean source
+        run: uv run python scripts/release/validate_candidate.py --tag "${{ github.ref_name }}"
+      - name: Build twice and prove reproducibility
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          uv build --out-dir dist
+          uv build --out-dir reproducibility-check
+          for artifact in dist/*; do
+            cmp "$artifact" "reproducibility-check/${artifact##*/}"
+          done
+          rm -rf reproducibility-check
+      - name: Validate metadata and archive policy
+        run: |
+          uv run twine check dist/*
+          uv run python scripts/release/inspect_artifacts.py dist
+      - name: Clean-install wheel and sdist outside checkout
+        env:
+          COMPOSE_PROJECT_NAME: pitwall-release-${{ github.run_id }}-${{ github.run_attempt }}
+          PITWALL_TEST_DATABASE_URL: postgresql://pitwall:pitwall@127.0.0.1:5444/pitwall_test
+          PITWALL_TEST_REDIS_URL: redis://127.0.0.1:6380/0
+        run: |
+          docker compose -f docker-compose.testinfra.yml up -d --wait --wait-timeout 120
+          uv run python scripts/release/smoke_artifacts.py dist
+      - name: Tear down artifact-smoke infrastructure
+        if: always()
+        env:
+          COMPOSE_PROJECT_NAME: pitwall-release-${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker compose -f docker-compose.testinfra.yml down -v
+      - name: Generate checksums
+        run: |
+          mkdir -p artifacts/package
+          sha256sum dist/* > artifacts/package/SHA256SUMS
+      - name: Generate installed-environment SBOM
+        run: |
+          uv venv artifacts/sbom-env
+          uv pip install --offline --python artifacts/sbom-env/bin/python dist/*.whl
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: artifacts/sbom-env
+          format: spdx-json
+          output-file: artifacts/package/pitwall-gpu-broker-${{ github.ref_name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-distributions
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-evidence
+          path: artifacts/package/
+          if-no-files-found: error
+          retention-days: 14
+
+  package-provenance:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: package-evidence
+          path: evidence
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-checksums: evidence/SHA256SUMS
+
+  image:
+    needs: readiness
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            dockerfile: docker/Dockerfile.api
+          - service: reconciler
+            dockerfile: docker/Dockerfile.reconciler
+          - service: webhook
+            dockerfile: docker/Dockerfile.webhook
+          - service: cost-exporter
+            dockerfile: docker/Dockerfile.cost-exporter
+          - service: mcp
+            dockerfile: docker/Dockerfile.mcp
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Build immutable linux/amd64 candidate once
+        run: |
+          mkdir -p artifacts/image
+          docker build --platform linux/amd64 \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            --label org.opencontainers.image.version=${{ github.ref_name }} \
+            --tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
+            --file "${{ matrix.dockerfile }}" .
+          docker save pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
+            --output artifacts/image/${{ matrix.service }}.tar
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }}
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }}
+          format: spdx-json
+          output-file: artifacts/image/${{ matrix.service }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Record candidate digest
+        run: |
+          docker image inspect --format='{{index .RepoDigests 0}}' \
+            pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} 2>/dev/null \
+            > artifacts/image/${{ matrix.service }}.digest || \
+          docker image inspect --format='{{.Id}}' \
+            pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
+            > artifacts/image/${{ matrix.service }}.digest
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-${{ matrix.service }}
+          path: artifacts/image/
+          if-no-files-found: error
+          retention-days: 14
+
+  image-smoke:
+    needs: image
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: pitwall-image-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      PITWALL_IMAGE_TAG: ${{ github.sha }}
+      PITWALL_SMOKE_ARTIFACT_DIR: artifacts/compose-smoke
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: image-*
+          path: artifacts/images
+          merge-multiple: true
+      - name: Load exact scanned candidate images
+        run: |
+          for archive in artifacts/images/*.tar; do
+            docker load --input "$archive"
+          done
+      - name: Run canonical Compose and hardened-image smoke
+        run: scripts/release/smoke_compose.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: compose-smoke-evidence
+          path: artifacts/compose-smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
+  stage-image:
+    if: vars.PITWALL_RELEASE_ENABLED == 'true'
+    needs: image-smoke
+    runs-on: ubuntu-latest
+    environment: ghcr-staging
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, reconciler, webhook, cost-exporter, mcp]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: image-${{ matrix.service }}
+          path: artifacts/image
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push and pull the exact candidate through the staging namespace
+        env:
+          STAGING_IMAGE: ghcr.io/${{ github.repository_owner }}/pitwall-gpu-broker-staging/${{ matrix.service }}
+        run: |
+          docker load --input artifacts/image/${{ matrix.service }}.tar
+          docker tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
+            "$STAGING_IMAGE:candidate-${GITHUB_SHA}"
+          docker push "$STAGING_IMAGE:candidate-${GITHUB_SHA}"
+          digest=$(docker image inspect --format='{{index .RepoDigests 0}}' \
+            "$STAGING_IMAGE:candidate-${GITHUB_SHA}")
+          docker image rm "$STAGING_IMAGE:candidate-${GITHUB_SHA}"
+          docker pull "$digest"
+          test "$(docker run --rm "$digest" pitwall-gpu-broker --version)" = "${GITHUB_REF_NAME#v}"
+          printf '%s\n' "$digest" > artifacts/image/${{ matrix.service }}.staging-digest
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staged-image-${{ matrix.service }}
+          path: artifacts/image/${{ matrix.service }}.staging-digest
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-testpypi:
+    if: vars.PITWALL_RELEASE_ENABLED == 'true' && vars.PITWALL_PYPI_RELEASE_ENABLED == 'true'
+    needs: [package, package-provenance]
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-distributions
+          path: dist
+      - name: Publish exact candidate to TestPyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - name: Install and smoke the exact TestPyPI version
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          uv venv /tmp/pitwall-testpypi
+          version=${VERSION#v}
+          for attempt in 1 2 3 4 5 6; do
+            if uv pip install --python /tmp/pitwall-testpypi/bin/python \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "pitwall-gpu-broker==$version"; then
+              break
+            fi
+            test "$attempt" -lt 6 || exit 1
+            sleep 10
+          done
+          test "$(/tmp/pitwall-testpypi/bin/pitwall-gpu-broker --version)" = "$version"
+          /tmp/pitwall-testpypi/bin/pitwall-gpu-broker --help
+
+  publish-pypi:
+    if: vars.PITWALL_RELEASE_ENABLED == 'true' && vars.PITWALL_PYPI_RELEASE_ENABLED == 'true'
+    needs: [publish-testpypi, image-smoke]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-distributions
+          path: dist
+      - name: Publish exact verified candidate to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: dist/
+
+  publish-image:
+    if: vars.PITWALL_RELEASE_ENABLED == 'true'
+    needs: [image, image-smoke, stage-image]
+    runs-on: ubuntu-latest
+    environment: ghcr
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, reconciler, webhook, cost-exporter, mcp]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: image-${{ matrix.service }}
+          path: artifacts/image
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Load and publish the verified bytes
+        id: push
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/pitwall-gpu-broker/${{ matrix.service }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          docker load --input artifacts/image/${{ matrix.service }}.tar
+          docker tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} "$IMAGE:$VERSION"
+          docker tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} "$IMAGE:sha-${GITHUB_SHA}"
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:sha-${GITHUB_SHA}"
+          digest=$(docker image inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$VERSION")
+          echo "name=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ steps.push.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  github-release:
+    if: vars.PITWALL_RELEASE_ENABLED == 'true'
+    needs: [package, package-provenance, publish-image]
+    runs-on: ubuntu-latest
+    environment: github-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-distributions
+          path: release-artifacts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: package-evidence
+          path: release-artifacts
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+          files: release-artifacts/**

@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""smoke_openai_proxy — live smoke test for Pitwall's OpenAI-compatible pass-through route.
+
+Uses the stock OpenAI SDK (openai>=1.40) and no Pitwall-specific client code.
+Calls the /v1/openai/{capability}/v1/chat/completions endpoint and verifies
+a non-empty completion.
+
+Usage:
+    PITWALL_URL=http://pitwall.tail-net:8080 ./tools/smoke_openai_proxy
+    PITWALL_URL=http://localhost:8080 ./tools/smoke_openai_proxy --capability llm.qwen3-32b
+    PITWALL_URL=http://localhost:8080 ./tools/smoke_openai_proxy --capability llm.qwen3-32b --model qwen3-32b
+
+Exit 0 on success, non-zero on failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+
+def _main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Smoke test for Pitwall OpenAI-compatible proxy.",
+    )
+    parser.add_argument(
+        "--capability",
+        default="llm.qwen3-32b",
+        help="Capability name to test (default: llm.qwen3-32b)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Model name to use in request (default: same as capability)",
+    )
+    parser.add_argument(
+        "--pitwall-url",
+        default=os.environ.get("PITWALL_URL", "http://pitwall.tail-net:8080"),
+        dest="pitwall_url",
+        help="Pitwall base URL (default: http://pitwall.tail-net:8080)",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("RUNPOD_API_KEY", ""),
+        help="RUNPOD_API_KEY (default: from RUNPOD_API_KEY env var)",
+    )
+    args = parser.parse_args()
+
+    if not args.api_key:
+        print(
+            "[smoke_openai_proxy] FAIL: RUNPOD_API_KEY environment variable is required",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    model = args.model or args.capability
+
+    base_url = f"{args.pitwall_url}/v1/openai/{args.capability}/v1"
+
+    print(f"[smoke_openai_proxy] Base URL: {base_url}")
+    print(f"[smoke_openai_proxy] Model: {model}")
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        print(
+            "[smoke_openai_proxy] FAIL: openai package not installed. Install with: pip install openai>=1.40",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    client = OpenAI(
+        base_url=base_url,
+        api_key=args.api_key,
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Say hello in one word."},
+            ],
+            max_tokens=20,
+            temperature=0.0,
+        )
+    except Exception as exc:  # reason: smoke test — surface any connection/auth failure
+        print(f"[smoke_openai_proxy] FAIL: API call failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not response.choices:
+        print("[smoke_openai_proxy] FAIL: No choices in response", file=sys.stderr)
+        sys.exit(1)
+
+    content = response.choices[0].message.content
+    if not content or content.strip() == "":
+        print("[smoke_openai_proxy] FAIL: Empty completion", file=sys.stderr)
+        sys.exit(1)
+
+    workload_id = response.id
+    print(f"[smoke_openai_proxy] Completion: {content}")
+    print(f"[smoke_openai_proxy] Workload ID: {workload_id}")
+    print("[smoke_openai_proxy] Smoke check passed")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    _main()

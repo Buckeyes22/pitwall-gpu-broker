@@ -1,0 +1,121 @@
+#!/bin/bash
+# smoke_pitwall_route — live smoke test for Pitwall's POST /v1/inference route.
+#
+# Calls the /v1/inference endpoint and verifies routing through the custom provider.
+# Requires RUNPOD_API_KEY, DATABASE_URL, and REDIS_URL in environment.
+#
+# Usage:
+#     ./tools/smoke_pitwall_route
+#     PITWALL_API_URL=http://pitwall.tail-net:8080 ./tools/smoke_pitwall_route
+#     ./tools/smoke_pitwall_route --capability llm.qwen3-32b --pitwall-url http://localhost:8080
+#
+# Exit 0 on success, non-zero on failure.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+DEFAULT_CAPABILITY="llm.qwen3-32b"
+DEFAULT_PITWALL_URL="http://pitwall.tail-net:8080"
+
+log() {
+    printf '[smoke_pitwall_route] %s\n' "$*" >&2
+}
+
+fail() {
+    printf '[smoke_pitwall_route] FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+CAPABILITY="${DEFAULT_CAPABILITY}"
+PITWALL_URL="${DEFAULT_PITWALL_URL}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --capability)
+            CAPABILITY="$2"
+            shift 2
+            ;;
+        --pitwall-url)
+            PITWALL_URL="$2"
+            shift 2
+            ;;
+        --help|-h)
+            printf 'Usage: %s [--capability CAPABILITY] [--pitwall-url URL]\n' "$0"
+            printf 'Defaults: --capability %s --pitwall-url %s\n' "${DEFAULT_CAPABILITY}" "${DEFAULT_PITWALL_URL}"
+            exit 0
+            ;;
+        *)
+            fail "Unknown argument: $1"
+            ;;
+    esac
+done
+
+RUNPOD_API_KEY="${RUNPOD_API_KEY:-}"
+if [[ -z "${RUNPOD_API_KEY}" ]]; then
+    fail "RUNPOD_API_KEY environment variable is required"
+fi
+
+DATABASE_URL="${DATABASE_URL:-}"
+if [[ -z "${DATABASE_URL}" ]]; then
+    fail "DATABASE_URL environment variable is required"
+fi
+
+REDIS_URL="${REDIS_URL:-}"
+if [[ -z "${REDIS_URL}" ]]; then
+    fail "REDIS_URL environment variable is required"
+fi
+
+INFERENCE_URL="${PITWALL_URL}/v1/inference"
+
+log "Calling: ${INFERENCE_URL}"
+log "Capability: ${CAPABILITY}"
+
+RESPONSE=$(mktemp)
+cleanup() {
+    rm -f "${RESPONSE}"
+}
+trap cleanup EXIT
+
+HTTP_STATUS=$(curl -s -w "%{http_code}" -o "${RESPONSE}" \
+    -X POST "${INFERENCE_URL}" \
+    -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"capability\": \"${CAPABILITY}\",
+        \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in one word.\"}],
+        \"max_tokens\": 20,
+        \"temperature\": 0.0,
+        \"dry_run\": true
+    }")
+
+if [[ "${HTTP_STATUS}" -eq 0 ]]; then
+    fail "curl failed to connect"
+fi
+
+if [[ "${HTTP_STATUS}" -ge 400 ]]; then
+    fail "HTTP ${HTTP_STATUS}: $(cat "${RESPONSE}")"
+fi
+
+SELECTED_PROVIDER=$(python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+result = data.get('result', {})
+selected = result.get('selected_provider_id', '')
+if not selected:
+    print('NO_PROVIDER', file=sys.stderr)
+    sys.exit(1)
+print(selected)
+" < "${RESPONSE}") || {
+    fail "Could not extract selected_provider_id: ${SELECTED_PROVIDER}"
+}
+
+log "Selected provider: ${SELECTED_PROVIDER}"
+
+if [[ "${SELECTED_PROVIDER}" == "NO_PROVIDER" ]]; then
+    fail "No provider selected in dry_run response"
+fi
+
+log "Smoke check passed: routed through provider ${SELECTED_PROVIDER}"
+exit 0
