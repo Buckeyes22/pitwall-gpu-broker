@@ -55,10 +55,16 @@ def test_github_first_release_requires_ghcr_but_not_deferred_pypi() -> None:
 
 def test_release_candidate_requires_versioned_public_notes() -> None:
     validator = _load("validate_candidate", ROOT / "scripts/release/validate_candidate.py")
-    assert validator.validate("v0.1.0a1", allow_dirty=True) == []
-    notes = ROOT / "docs/releases/v0.1.0a1.md"
+    assert validator.validate("v0.1.0a2", allow_dirty=True) == []
+    notes = ROOT / "docs/releases/v0.1.0a2.md"
     assert notes.is_file()
     assert "GitHub-first" in notes.read_text(encoding="utf-8")
+
+
+def test_ghcr_paths_normalize_the_repository_owner_to_lowercase() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert workflow.count("${GITHUB_REPOSITORY_OWNER,,}") == 2
+    assert "ghcr.io/${{ github.repository_owner }}" not in workflow
 
 
 def test_python_registries_are_not_in_the_github_first_workflow() -> None:

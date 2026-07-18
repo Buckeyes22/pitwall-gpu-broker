@@ -24,8 +24,8 @@ migration or overwrite an existing package version or image digest.
 5. Create a signed annotated tag:
 
    ```bash
-   git tag -s v0.1.0a1 -m "Pitwall 0.1.0a1"
-   git push origin v0.1.0a1
+   git tag -s v0.1.0a2 -m "Pitwall 0.1.0a2"
+   git push origin v0.1.0a2
    ```
 
 ## Automated state machine

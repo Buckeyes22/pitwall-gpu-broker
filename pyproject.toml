@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pitwall-gpu-broker"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Self-hosted GPU workload broker with Runpod integration"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

@@ -125,6 +125,7 @@ jobs:
           docker build --platform linux/amd64 \
             --label org.opencontainers.image.revision=${{ github.sha }} \
             --label org.opencontainers.image.version=${{ github.ref_name }} \
+            --label org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY} \
             --tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
             --file "${{ matrix.dockerfile }}" .
           docker save pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
@@ -210,9 +211,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push and pull the exact candidate through the staging namespace
-        env:
-          STAGING_IMAGE: ghcr.io/${{ github.repository_owner }}/pitwall-gpu-broker-staging/${{ matrix.service }}
         run: |
+          STAGING_IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pitwall-gpu-broker-staging/${{ matrix.service }}"
           docker load --input artifacts/image/${{ matrix.service }}.tar
           docker tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
             "$STAGING_IMAGE:candidate-${GITHUB_SHA}"
@@ -257,9 +257,9 @@ jobs:
       - name: Load and publish the verified bytes
         id: push
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/pitwall-gpu-broker/${{ matrix.service }}
           VERSION: ${{ github.ref_name }}
         run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pitwall-gpu-broker/${{ matrix.service }}"
           docker load --input artifacts/image/${{ matrix.service }}.tar
           docker tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} "$IMAGE:$VERSION"
           docker tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} "$IMAGE:sha-${GITHUB_SHA}"

@@ -14,9 +14,9 @@
     ],
     "component": {
       "type": "library",
-      "bom-ref": "pitwall-gpu-broker-1@0.1.0a1",
+      "bom-ref": "pitwall-gpu-broker-1@0.1.0a2",
       "name": "pitwall-gpu-broker",
-      "version": "0.1.0a1",
+      "version": "0.1.0a2",
       "properties": [
         {
           "name": "uv:package:is_project_root",
