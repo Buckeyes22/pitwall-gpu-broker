@@ -577,6 +577,11 @@ BEGIN;
 DROP SCHEMA IF EXISTS pitwall CASCADE;
 {_ALL_MIGRATION_SQL}
 
+-- Keep the migrated schema in the outer disposable transaction while rolling
+-- back only the audit writes below. This also works against a truly empty
+-- database, where rolling back the outer transaction would remove the schema.
+SAVEPOINT audit_writes;
+
 -- 1. Insert a capability so FK targets exist for providers.
 INSERT INTO pitwall.capabilities
   (id, name, version, class, cost_mode, config, created_at, updated_at)
@@ -666,11 +671,11 @@ BEGIN
 END
 $$;
 
--- ROLLBACK proves the audit writes were transactional and disposable.
-ROLLBACK;
+-- Roll back only the data written after the savepoint. The schema remains
+-- available long enough to prove that neither audit row survived.
+ROLLBACK TO SAVEPOINT audit_writes;
 
--- 8. Verify the audit rows are gone after rollback (in a new transaction).
-BEGIN;
+-- 8. Verify the audit rows are gone after the savepoint rollback.
 DO $$
 DECLARE
   v_count INTEGER;
@@ -682,5 +687,7 @@ BEGIN
     'audit rows should not exist after rollback, found ' || v_count;
 END
 $$;
+
+-- Restore the database to its exact pre-test state.
 ROLLBACK;
 """
