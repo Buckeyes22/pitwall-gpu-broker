@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from pathlib import Path
@@ -26,7 +27,10 @@ _MIGRATION_DIR = _REPO_ROOT / "db" / "migrations"
 _CAPABILITY_ID = "cap_pod"
 _CAPABILITY_NAME = "pod.nginx"
 _PROVIDER_ID = "prov_pod"
-_PROVIDER_NAME = "prov_pod"
+_LIVE_RUN_ID = os.getenv("PITWALL_LIVE_RUN_ID", "local")
+if not re.fullmatch(r"[A-Za-z0-9_-]+", _LIVE_RUN_ID):
+    raise ValueError("PITWALL_LIVE_RUN_ID contains unsafe pod-name characters")
+_PROVIDER_NAME = f"prov_pod_acceptance_{_LIVE_RUN_ID}"
 _POD_NAME_PREFIX = f"pitwall-{_PROVIDER_NAME}-"
 # nginx:alpine is a tiny public image that listens on :80 and returns 200 on "/"
 # immediately, so the readiness probe (GET {pod}-80.proxy.runpod.net/ -> 2xx)

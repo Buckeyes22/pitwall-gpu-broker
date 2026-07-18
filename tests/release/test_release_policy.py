@@ -58,12 +58,15 @@ def test_only_deferred_python_registry_requires_a_separate_enable_gate() -> None
     assert "PITWALL_GHCR_RELEASE_ENABLED" not in workflow
 
 
-def test_live_acceptance_is_dispatchable_bounded_and_non_skipping() -> None:
+def test_live_acceptance_is_dispatchable_bounded_and_non_skipping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     workflow = (ROOT / ".github/workflows/release-readiness.yml").read_text(encoding="utf-8")
     live_job = workflow.split("  live:", 1)[1]
 
     assert workflow.count("release_candidate:") == 2
     assert "PITWALL_LIVE_SPEND_CAP_USD" in live_job
+    assert "PITWALL_LIVE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}" in live_job
     assert "cap > 0 && cap <= 5" in live_job
     assert "docker-compose.testinfra.yml up -d --wait" in live_job
     assert "tests/api/test_e2e_sync_inference.py" in live_job
@@ -72,6 +75,13 @@ def test_live_acceptance_is_dispatchable_bounded_and_non_skipping() -> None:
     assert "pytest tests/" not in live_job
     assert "cleanup_live_runpod.py" in live_job
     assert "docker-compose.testinfra.yml down -v" in live_job
+
+    cleanup = _load("cleanup_live_runpod", ROOT / "scripts/release/cleanup_live_runpod.py")
+    monkeypatch.setenv("PITWALL_LIVE_RUN_ID", "12345-2")
+    assert cleanup._acceptance_prefix() == "pitwall-prov_pod_acceptance_12345-2-"
+    monkeypatch.delenv("PITWALL_LIVE_RUN_ID")
+    with pytest.raises(ValueError, match="exact GitHub run"):
+        cleanup._acceptance_prefix()
 
 
 def test_live_endpoint_ids_are_external_inputs() -> None:
