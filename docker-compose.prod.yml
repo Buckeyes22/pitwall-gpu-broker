@@ -1,0 +1,3 @@
+# Compatibility entrypoint. docker-compose.yml is the single canonical stack.
+include:
+  - path: ./docker-compose.yml

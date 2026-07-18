@@ -1,0 +1,401 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run ruff
+        run: uv run ruff check .
+
+      - name: Run worker HF CLI guard
+        run: uv run python tools/guards/deprecated_hf_cli.py
+
+      - name: Validate workflow trust policy
+        run: uv run python tools/ci/check_workflows.py
+
+      - name: Check OpenAPI compatibility against the base revision
+        env:
+          PITWALL_OPENAPI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          uv run python tools/ci/export_openapi.py --output /tmp/openapi-candidate.json
+          if test -n "$PITWALL_OPENAPI_BASE_SHA" && \
+             git cat-file -e "$PITWALL_OPENAPI_BASE_SHA:docs/api/openapi-baseline.json"; then
+            git show "$PITWALL_OPENAPI_BASE_SHA:docs/api/openapi-baseline.json" \
+              > /tmp/openapi-baseline.json
+          else
+            cp docs/api/openapi-baseline.json /tmp/openapi-baseline.json
+          fi
+          uv run python tools/ci/check_openapi_compat.py \
+            /tmp/openapi-baseline.json /tmp/openapi-candidate.json
+
+      - name: Install and run Actionlint 1.7.12
+        run: |
+          curl --fail --silent --show-error --location \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output /tmp/actionlint.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' \
+            | sha256sum --check --strict
+          tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint
+          /tmp/actionlint
+
+      - name: Enforce DCO sign-offs
+        if: github.event_name == 'pull_request'
+        env:
+          PITWALL_DCO_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PITWALL_DCO_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: uv run python tools/ci/check_dco.py
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run ruff format
+        run: uv run ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run mypy --strict
+        run: uv run mypy --strict src/
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+
+      - name: Validate internal Markdown links and anchors
+        run: uv run python tools/ci/check_markdown_links.py
+
+      - name: Validate external Markdown links with retries
+        if: github.event_name == 'schedule'
+        run: uv run python tools/ci/check_markdown_links.py --external
+
+  container-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, reconciler, webhook, cost-exporter, mcp]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Build supported service image without publishing
+        run: |
+          docker build --platform linux/amd64 \
+            --tag pitwall-gpu-broker/${{ matrix.service }}:ci \
+            --file docker/Dockerfile.${{ matrix.service }} .
+          test "$(docker image inspect --format '{{.Config.User}}' \
+            pitwall-gpu-broker/${{ matrix.service }}:ci)" = "10001:10001"
+          test "$(docker image inspect --format '{{if .Config.Healthcheck}}yes{{end}}' \
+            pitwall-gpu-broker/${{ matrix.service }}:ci)" = "yes"
+
+      - name: Scheduled fixed-vulnerability image scan
+        if: github.event_name == 'schedule'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: pitwall-gpu-broker/${{ matrix.service }}:ci
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate canonical deployment configuration
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          REDIS_PASSWORD: ci-redis-password
+          RUNPOD_API_KEY: ci-runpod-key
+          PITWALL_API_TOKEN: ci-api-token-00000001
+          PITWALL_ADMIN_SECRET: ci-admin-secret-00000001
+          PITWALL_WEBHOOK_SECRET: ci-webhook-secret-00000001
+          PITWALL_WEBHOOK_ENCRYPTION_KEYS: '{"v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
+          PITWALL_ARCHIVE_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: docker compose config -q
+
+  security-sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --frozen --extra dev
+      - name: bandit (fail only on findings new vs baseline)
+        run: |
+          uv run bandit -c pyproject.toml -r src/pitwall -ll -ii \
+            -b tools/security/bandit-baseline.json
+      - name: pip-audit (locked dependencies)
+        run: |
+          audit_args=()
+          while IFS= read -r vulnerability_id; do
+            test -n "$vulnerability_id" && audit_args+=(--ignore-vuln "$vulnerability_id")
+          done < <(sed -E 's/#.*//' tools/security/pip-audit-ignore.txt)
+          uv run pip-audit -r \
+            <(uv export --frozen --format requirements-txt --no-hashes) \
+            "${audit_args[@]}"
+      - name: Semgrep Python and security rules
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          uvx --from semgrep==1.165.0 semgrep scan --error \
+            --config p/python --config p/security-audit \
+            --exclude-rule python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5 \
+            --config tools/security/semgrep.yml src/pitwall
+      - name: Runtime dependency license policy
+        run: uv run python tools/security/check_licenses.py
+
+  security-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --frozen --extra dev
+      - name: detect-secrets (audit baseline up to date)
+        run: |
+          uv run python tools/security/check_secrets.py
+
+  security-fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --frozen --extra dev
+      - name: schemathesis fuzz of the public API (no server errors on any input)
+        run: uv run pytest -m fuzz tests/security -p no:randomly -p no:cov -q
+
+  mutation-smoke:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --frozen --extra dev
+      - name: mutmut core-trio score gate
+        run: make mutation-gate
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run fast test suite with coverage gate (hermetic floor)
+        run: |
+          uv run pytest -m "not integration and not slow" \
+            --cov=src/pitwall --cov-report=term-missing --cov-fail-under=74
+
+      - name: Run property suite (thorough hypothesis profile)
+        env:
+          HYPOTHESIS_PROFILE: ci
+        run: uv run pytest -m property -p no:randomly
+
+  dependency-compatibility:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        resolution: [highest, lowest-direct]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+
+      - name: Resolve ${{ matrix.resolution }} compatible dependencies
+        run: uv lock --upgrade --resolution "${{ matrix.resolution }}"
+
+      - name: Install resolved dependencies
+        # --frozen is essential here: without it, uv re-locks with its default
+        # highest resolution and silently defeats the lowest-direct matrix row.
+        run: uv sync --frozen --extra dev
+
+      - name: Run hermetic compatibility suite
+        run: uv run --frozen pytest -m "not integration and not slow" -p no:randomly -p no:cov
+
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: pitwall-ci-int-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Start test infrastructure (Postgres + Redis)
+        run: docker compose -f docker-compose.testinfra.yml up -d --wait --wait-timeout 120
+
+      - name: Run integration suite (real Postgres + Redis)
+        env:
+          # DATABASE_URL drives the legacy _REAL_DB_TEST_MODULES (tests/db,
+          # tests/test_webhook_duplicate_delivery_stress); PITWALL_TEST_* drives the
+          # tests/integration pg_pool/redis_client fixtures. Both point at the same
+          # docker-compose infra so the full `-m integration` union runs green.
+          DATABASE_URL: postgresql://pitwall:pitwall@127.0.0.1:5444/pitwall_test
+          PITWALL_TEST_DATABASE_URL: postgresql://pitwall:pitwall@127.0.0.1:5444/pitwall_test
+          PITWALL_TEST_REDIS_URL: redis://127.0.0.1:6380/0
+        run: uv run pytest -m integration -p no:randomly -p no:cov
+
+      - name: Tear down test infrastructure
+        if: always()
+        run: docker compose -f docker-compose.testinfra.yml down -v
+
+  coverage-combined:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: pitwall-ci-cov-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Start test infrastructure (Postgres + Redis)
+        run: docker compose -f docker-compose.testinfra.yml up -d --wait --wait-timeout 120
+
+      - name: Combined coverage gate (hermetic + integration, fail-under 77)
+        env:
+          DATABASE_URL: postgresql://pitwall:pitwall@127.0.0.1:5444/pitwall_test
+          PITWALL_TEST_DATABASE_URL: postgresql://pitwall:pitwall@127.0.0.1:5444/pitwall_test
+          REDIS_URL: redis://127.0.0.1:6380/0
+          PITWALL_TEST_REDIS_URL: redis://127.0.0.1:6380/0
+        run: |
+          uv run coverage erase
+          uv run coverage run --append -m pytest -p no:randomly -p no:cov \
+            -m "not integration and not slow and not live"
+          uv run coverage run --append -m pytest -p no:randomly -p no:cov -m integration tests
+          uv run coverage report --include="src/**" --show-missing --fail-under=77
+          uv run coverage json -o /tmp/coverage.json
+          uv run python tools/ci/check_risk_coverage.py /tmp/coverage.json
+
+      - name: Tear down test infrastructure
+        if: always()
+        run: docker compose -f docker-compose.testinfra.yml down -v
+
+  required:
+    name: CI
+    if: always()
+    needs:
+      - lint
+      - format
+      - typecheck
+      - docs
+      - container-build
+      - compose-config
+      - security-sast
+      - security-secrets
+      - security-fuzz
+      - test
+      - integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the normal pull-request checks
+        env:
+          JOBS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          results = {
+              name: details["result"]
+              for name, details in json.loads(os.environ["JOBS"]).items()
+          }
+          print("\n".join(f"{name}: {result}" for name, result in sorted(results.items())))
+          failed = [name for name, result in results.items() if result != "success"]
+          if failed:
+              raise SystemExit(f"required CI jobs failed: {', '.join(sorted(failed))}")
+          PY

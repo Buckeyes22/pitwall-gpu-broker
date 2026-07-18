@@ -1,0 +1,58 @@
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "input": {
+    "maxFileSize": 2000000
+  },
+  "output": {
+    "filePath": ".code-intel-eval/repomix-output/default.md",
+    "style": "markdown",
+    "topFilesLength": 20,
+    "tokenCountTree": 1000,
+    "truncateBase64": true,
+    "git": {
+      "sortByChanges": true,
+      "sortByChangesMaxCommits": 100
+    }
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDotIgnore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      ".code-intel-eval/**",
+      ".codegraph/**",
+      ".hypothesis/**",
+      ".mypy_cache/**",
+      ".potpie/**",
+      ".pytest_cache/**",
+      ".repowise/**",
+      ".ruff_cache/**",
+      ".serena/**",
+      ".venv/**",
+      "artifacts/**",
+      "graphify-out/**",
+      "htmlcov/**",
+      "repomix-output.*",
+      "**/*.pyc",
+      "**/__pycache__/**",
+      "**/*.png",
+      "**/*.jpg",
+      "**/*.jpeg",
+      "**/*.webp",
+      "**/*.gif",
+      "**/*.ico",
+      "**/*.pdf",
+      "**/*.zip",
+      "**/*.tar",
+      "**/*.tar.gz",
+      "**/*.tgz",
+      "**/*.zst"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  },
+  "tokenCount": {
+    "encoding": "o200k_base"
+  }
+}

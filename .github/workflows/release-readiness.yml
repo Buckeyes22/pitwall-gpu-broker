@@ -1,0 +1,165 @@
+name: Release Readiness
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-readiness-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --frozen --extra dev
+      - name: Workflow and secret policy
+        run: |
+          uv run python tools/ci/check_workflows.py
+          uv run python tools/security/check_secrets.py
+      - name: Bandit and locked dependency audit
+        run: |
+          uv run bandit -c pyproject.toml -r src/pitwall -ll -ii \
+            -b tools/security/bandit-baseline.json
+          audit_args=()
+          while IFS= read -r vulnerability_id; do
+            test -n "$vulnerability_id" && audit_args+=(--ignore-vuln "$vulnerability_id")
+          done < <(sed -E 's/#.*//' tools/security/pip-audit-ignore.txt)
+          uv run pip-audit -r \
+            <(uv export --frozen --format requirements-txt --no-hashes) \
+            "${audit_args[@]}"
+      - name: Semgrep and runtime license policy
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          uvx --from semgrep==1.165.0 semgrep scan --error \
+            --config p/python --config p/security-audit \
+            --exclude-rule python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5 \
+            --config tools/security/semgrep.yml src/pitwall
+          mkdir -p artifacts/release
+          uv run python tools/security/check_licenses.py \
+            --report artifacts/release/dependency-licenses.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-license-report
+          path: artifacts/release/dependency-licenses.json
+          if-no-files-found: error
+
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+      - run: uv sync --frozen --extra dev
+      - name: Enforce core mutation score
+        run: make mutation-gate
+
+  hermetic:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: pitwall-rr-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Start test infrastructure (Postgres + Redis)
+        run: docker compose -f docker-compose.testinfra.yml up -d --wait --wait-timeout 120
+
+      - name: Run ruff
+        run: uv run ruff check .
+
+      - name: Run worker HF CLI guard
+        run: uv run python tools/guards/deprecated_hf_cli.py
+
+      - name: Run dep pin checker guard
+        run: uv run python tools/guards/dep_pin_checker.py
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run mypy --strict
+        run: uv run mypy --strict src/
+
+      - name: Check committed OpenAPI baseline
+        run: |
+          uv run python tools/ci/export_openapi.py --output /tmp/openapi-candidate.json
+          uv run python tools/ci/check_openapi_compat.py \
+            docs/api/openapi-baseline.json /tmp/openapi-candidate.json
+
+      - name: Combined coverage gate (hermetic + integration, fail-under 77)
+        env:
+          DATABASE_URL: postgresql://pitwall:pitwall@127.0.0.1:5444/pitwall_test
+          PITWALL_TEST_DATABASE_URL: postgresql://pitwall:pitwall@127.0.0.1:5444/pitwall_test
+          REDIS_URL: redis://127.0.0.1:6380/0
+          PITWALL_TEST_REDIS_URL: redis://127.0.0.1:6380/0
+        run: |
+          mkdir -p artifacts/release
+          uv run coverage erase
+          uv run coverage run --append -m pytest -p no:randomly -p no:cov \
+            --junitxml=artifacts/release/hermetic-tests.xml \
+            -m "not integration and not slow and not live"
+          uv run coverage run --append -m pytest -p no:randomly -p no:cov \
+            --junitxml=artifacts/release/integration-tests.xml -m integration tests
+          uv run coverage report --include="src/**" --show-missing --fail-under=77
+          uv run coverage json -o artifacts/release/coverage.json
+          uv run python tools/ci/check_risk_coverage.py artifacts/release/coverage.json \
+            --report artifacts/release/risk-coverage.json
+
+      - name: Sixteen-check audit (FATAL --strict)
+        run: uv run python -m pitwall.audit.sixteen_check --strict
+
+      - name: Release tiers (exact -m release selector; live envelopes self-skip)
+        run: |
+          uv run pytest -m release tests/release -p no:randomly -p no:cov -q \
+            --junitxml=artifacts/release/release-tests.xml
+
+      - name: Kill-switch drill (<30s atomic, stage order, middleware 401)
+        run: |
+          uv run pytest tests/admin/test_kill_switch.py tests/admin/test_kill_switch_route.py \
+            -p no:randomly -p no:cov -q \
+            --junitxml=artifacts/release/kill-switch-tests.xml
+
+      - name: Sixteen-check audit artifact (machine-readable)
+        run: |
+          mkdir -p artifacts/release
+          uv run python -m pitwall.audit.sixteen_check --json > artifacts/release/sixteen-check-audit.json
+
+      - name: Upload sixteen-check audit artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sixteen-check-audit
+          path: artifacts/release/sixteen-check-audit.json
+
+      - name: Upload risk coverage evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: risk-coverage
+          path: artifacts/release/risk-coverage.json
+          if-no-files-found: error
+
+      - name: Upload machine-readable test summaries
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-test-summaries
+          path: artifacts/release/*-tests.xml
+          if-no-files-found: warn
+
+      - name: Tear down test infrastructure
+        if: always()
+        run: docker compose -f docker-compose.testinfra.yml down -v

@@ -1,0 +1,270 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pitwall-gpu-broker"
+version = "0.1.0a1"
+description = "Self-hosted GPU workload broker with Runpod integration"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.12,<3.14"
+authors = [{ name = "The Pitwall Authors" }]
+readme = "README.md"
+keywords = ["runpod", "gpu", "broker", "llm", "inference", "finops", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: System :: Distributed Computing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.5,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "httpx>=0.27,<1",
+    "arq>=0.25,<1",
+    "mcp>=1.28.1,<2",
+    "asyncpg>=0.29,<1",
+    "python-ulid>=2.7",
+    "redis>=5.0,<6",
+    "click>=8.1,<9",
+    "textual>=8.2,<9",
+    "prometheus-client>=0.20,<1",
+    "runpod>=1.9,<2",
+    "cryptography>=45,<50",
+]
+
+[project.urls]
+Homepage = "https://github.com/buckeyes22/pitwall-gpu-broker"
+Repository = "https://github.com/buckeyes22/pitwall-gpu-broker"
+Issues = "https://github.com/buckeyes22/pitwall-gpu-broker/issues"
+Changelog = "https://github.com/buckeyes22/pitwall-gpu-broker/releases"
+
+[project.scripts]
+pitwall-gpu-broker = "pitwall.cli:main"
+pitwall-api = "pitwall.api.__main__:main"
+pitwall-mcp = "pitwall.mcp.__main__:main"
+pitwall-reconciler = "pitwall.reconciler.__main__:main"
+pitwall-webhook = "pitwall.webhook_receiver.__main__:main"
+pitwall-cost-exporter = "pitwall.cost_exporter.__main__:main"
+
+[project.optional-dependencies]
+storage = [
+    "boto3>=1.34,<2",
+]
+email = [
+    "resend>=2.30,<3",
+]
+tracing = [
+    "langfuse>=3,<4",
+]
+dev = [
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.4,<2",
+    "pytest-cov>=6.0",
+    "respx>=0.21,<1",
+    "ruff>=0.8",
+    "mypy>=1.14",
+    "coverage>=7.0",
+    "pre-commit>=4.0",
+    "hypothesis>=6.100",
+    "schemathesis>=4.10,<5",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
+    "detect-secrets>=1.5",
+    "mutmut>=3.5",
+    "locust>=2.30",
+    "pytest-benchmark>=4.0",
+    "pytest-randomly>=3.15",
+    "twine>=6,<7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pitwall"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"db/migrations" = "pitwall/db/migrations"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/pitwall",
+    "/db/migrations",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/NOTICE",
+    "/pyproject.toml",
+]
+exclude = [
+    "/docs",
+    "/examples",
+    "/tools",
+    "/tests",
+    "/.gitignore",
+    ".gitignore",
+    "/.remember",
+    "**/.code-intel-eval/**",
+    "**/.secrets.baseline",
+    "**/*_EVIDENCE_*",
+    "**/.mcp.json",
+    "**/.repomixignore",
+    "**/repomix.config.json",
+    "**/.semgrepignore",
+    "**/artifacts/**",
+    "**/htmlcov/**",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "error::RuntimeWarning",
+    "error::pytest.PytestWarning",
+    "error::DeprecationWarning:pitwall\\..*",
+    "error::ResourceWarning",
+    "ignore:websockets\\.legacy is deprecated:DeprecationWarning:websockets\\.legacy",
+    "ignore:websockets\\.server\\.WebSocketServerProtocol is deprecated:DeprecationWarning:uvicorn\\.protocols\\.websockets\\.websockets_impl",
+    "ignore:Unclosed <MemoryObject.*Stream.*:ResourceWarning:anyio\\.streams\\.memory",
+]
+markers = [
+    "live: calls real external services; skipped unless --run-live or RUNPOD_LIVE=1",
+    "asyncio: run an async test with pytest-asyncio",
+    "integration: needs real Postgres/Redis (docker-compose.testinfra); skipped unless PITWALL_TEST_DATABASE_URL/PITWALL_TEST_REDIS_URL set",
+    "chaos: hermetic fault-injection (429/5xx/SSE/outage/terminate); no external services",
+    "slow: long-running (load/perf/mutation-smoke); excluded from the default fast suite",
+    "property: hypothesis-driven; may be given more examples in CI",
+    "security: security/auth/fuzz tests for the Security track (release program)",
+    "fuzz: schemathesis/hypothesis-driven; may be given more examples in CI",
+    "benchmark: pytest-benchmark micro-benchmarks (release program perf); excluded from the fast suite",
+    "release: public-alpha release-validation tier; un-skipped only with the exact `-m release` selector",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency-injection markers are intentional call-in-default values;
+# they are the framework idiom, not the accidental-mutable-default that B008
+# targets. Exempt them so B008 catches real bugs only.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+]
+
+[tool.bandit]
+# Scan production code only; tests legitimately use assert + subprocess + tmp.
+exclude_dirs = ["tests", ".venv", "db", "docker", "scripts"]
+# Inline `# nosec` is banned by repo policy. Use the baseline file instead.
+skips = []
+
+[tool.hypothesis]
+# Local default is fast; CI overrides with the "ci" profile.
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# Third-party deps without type stubs, plus the optional-extra SDKs (boto3 /
+# langfuse) that the dev/typecheck install does not pull in. ignore_missing_imports
+# lets `mypy --strict src/` run without their stubs; the seam wrappers that touch
+# them are thin and lazy-imported.
+[[tool.mypy.overrides]]
+module = [
+    "asyncpg.*",
+    "boto3.*",
+    "botocore.*",
+    "langfuse.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/pitwall"]
+branch = true
+
+[tool.coverage.report]
+include = ["src/**"]
+show_missing = true
+# Combined coverage floor. The hermetic fast suite alone tops out ~74% (real-DB
+# modules aren't exercised without Postgres); the COMBINED fast+integration run
+# (ci.yml `coverage-combined` job + release-readiness.yml) reaches ~77.6%. This
+# floor gates that combined run at 77 — an honest ratchet above the hermetic
+# 74%. 95% is the long-term target; raise this as broad-coverage tests grow,
+# never lower it. The hermetic `test` job keeps its own explicit
+# --cov-fail-under=74 (its lane can't reach the combined number).
+fail_under = 77
+
+# --- release program mutation testing (mutmut 3.x) ------------------------------------
+# mutmut 3.x copies code into a `mutants/` sandbox, front-loads `mutants/src` on
+# sys.path and strips the original `src` so tests import the mutated copy. With a
+# src/ layout, `paths_to_mutate` alone would copy an *incomplete* package, so we
+# add `src` to `also_copy` to keep the whole package importable while mutation
+# generation stays scoped to the highest-risk pure-logic modules. There is no
+# `runner` key in 3.x; test selection + marker filtering go through pytest args.
+[tool.mutmut]
+# Mutation scope = the highest-risk pure-logic "core trio" (cost / rate-limit /
+# lease-state). routing/ and audit/ are deliberately out of this committed scope:
+# the ≥85% score floor (release program) is defined on this trio, and these modules
+# have fast, fully hermetic oracles. mutmut 3.x scopes via config only — there is
+# no `mutmut run --paths-to-mutate`.
+paths_to_mutate = [
+    "src/pitwall/cost/estimator.py",
+    "src/pitwall/cost/budget_gate.py",
+    "src/pitwall/cost/sync_gate.py",
+    "src/pitwall/cost/usage.py",
+    "src/pitwall/cost/threshold_alerts.py",
+    "src/pitwall/rate_limits/algorithm.py",
+    "src/pitwall/leases/state.py",
+]
+# mutmut copies only paths_to_mutate into the mutants/ sandbox; add the rest of the
+# package + the repo data dirs tests read at import (db/migrations SQL, config,
+# dashboards) so the sandbox is a complete, importable working tree.
+also_copy = ["src", "db", "config", "dashboards", "tools", "scripts"]
+# Curated *hermetic* oracle. The full suite cannot be the oracle: mutmut runs pytest
+# in-process, and tests that monkeypatch module globals (e.g. the kill-switch's
+# terminate_all_with_tag) bind to a different module identity in the sandbox and make
+# real calls. These pure unit tests have no network/DB/file-identity coupling.
+tests_dir = [
+    "tests/cost/test_estimator.py",
+    "tests/cost/test_sync_gate.py",
+    "tests/cost/test_usage.py",
+    "tests/cost/test_budget_gate.py",
+    "tests/cost/test_threshold_alerts.py",
+    "tests/rate_limits/test_bucket_algorithm.py",
+    "tests/leases/test_state.py",
+    # release program survivor-kill tests (pure; sandbox-safe).
+    "tests/unit/cost/test_estimator_rounding.py",
+    "tests/unit/cost/test_estimator_boundary.py",
+    "tests/unit/cost/test_sync_persist_deadline.py",
+    "tests/unit/leases/test_state_transition_matrix.py",
+    "tests/unit/rate_limits/test_algorithm_boundaries.py",
+]
+# Applied to every in-sandbox pytest run: deterministic order, no coverage plugin,
+# fast hermetic lane only (real-DB integration + slow/benchmark/fuzz excluded so the
+# sandbox never needs Postgres/Redis and stays tractable).
+pytest_add_cli_args = [
+    "-p", "no:randomly",
+    "-p", "no:cov",
+    "-m", "not live and not slow and not benchmark and not integration and not fuzz",
+]

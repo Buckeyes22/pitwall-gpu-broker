@@ -1,0 +1,43 @@
+# Test infrastructure for autonomous Pitwall orchestrator AC verification.
+# Postgres + Redis bound to 127.0.0.1 only — Tailnet-style boundary.
+# Workers' AC commands hit these (DATABASE_URL=postgresql://...:5444, REDIS_URL=redis://...:6380).
+#
+#   docker compose -f docker-compose.testinfra.yml up -d
+#   docker compose -f docker-compose.testinfra.yml down       (preserve volumes)
+#   docker compose -f docker-compose.testinfra.yml down -v    (nuke volumes)
+
+services:
+  postgres:
+    image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pitwall
+      POSTGRES_PASSWORD: pitwall
+      POSTGRES_DB: pitwall_test
+    ports:
+      - "127.0.0.1:${PITWALL_TEST_POSTGRES_PORT:-5444}:5432"
+    volumes:
+      - pitwall-test-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pitwall -d pitwall_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${PITWALL_TEST_REDIS_PORT:-6380}:6379"
+    volumes:
+      - pitwall-test-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pitwall-test-pg: {}
+  pitwall-test-redis: {}

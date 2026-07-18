@@ -1,0 +1,21 @@
+rules:
+  # The upstream Python registry rule reports the intentionally non-cryptographic
+  # row checksums in backup_drill.py. That acceptance is documented in this
+  # directory's README. Keep equivalent coverage everywhere else.
+  - id: pitwall.security.insecure-md5
+    message: >-
+      MD5 is not collision resistant. Use SHA-256 or stronger unless this is a
+      documented non-security checksum.
+    severity: WARNING
+    languages:
+      - python
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - patterns:
+          - pattern-inside: |
+              from hashlib import md5
+              ...
+          - pattern: md5(...)
+    paths:
+      exclude:
+        - /src/pitwall/ops/backup_drill.py

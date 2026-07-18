@@ -1,0 +1,3 @@
+# One advisory ID per line, each with a justification comment dated.
+# Format used by: pip-audit $(sed -E 's/#.*//' tools/security/pip-audit-ignore.txt | xargs -r -n1 echo --ignore-vuln)
+# (empty today - no accepted CVEs)

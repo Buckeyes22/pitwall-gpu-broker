@@ -1,0 +1,63 @@
+groups:
+  - name: pitwall-cloud
+    rules:
+      - alert: PitwallCloudBudget50
+        expr: pitwall_cloud_budget_pct >= 50
+        for: 5m
+        labels: { severity: info }
+        annotations:
+          summary: "Pitwall cloud spend at 50% of monthly budget"
+      - alert: PitwallCloudBudget75
+        expr: pitwall_cloud_budget_pct >= 75
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Pitwall cloud spend at 75% of monthly budget"
+      - alert: PitwallCloudBudget90
+        expr: pitwall_cloud_budget_pct >= 90
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Pitwall cloud spend at 90% of monthly budget"
+      - alert: PitwallKillSwitchTriggered
+        expr: increase(pitwall_kill_log_triggers_7d[1h]) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Pitwall kill switch activated in last hour"
+      - alert: PitwallUnhealthyProvider
+        expr: pitwall_providers_unhealthy > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Pitwall has unhealthy providers"
+      - alert: PitwallWorkloadQueueBacklog
+        expr: pitwall_workload_queue_depth > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Pitwall workload queue has remained above 100 jobs"
+      - alert: PitwallReconciliationLag
+        expr: pitwall_reconciliation_lag_seconds > 300
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Pitwall reconciliation is more than five minutes behind"
+      - alert: PitwallWebhookRetriesDue
+        expr: pitwall_webhook_delivery_retries_due > 0
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Pitwall has outbound webhook retries overdue"
+      - alert: PitwallWebhookTerminalFailures
+        expr: pitwall_webhook_delivery_terminal_failures_24h > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Pitwall has terminal outbound webhook failures"
+      - alert: PitwallRetentionStale
+        expr: pitwall_retention_last_success_timestamp_seconds > 0 and (time() - pitwall_retention_last_success_timestamp_seconds) > 691200
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Pitwall retention has not completed successfully in eight days"

@@ -1,0 +1,57 @@
+"""Shared fakes for Pitwall's hermetic tests."""
+
+from tests.fakes.blob_store import FakeBlobStore, FakeGarage, _FakeGarage
+from tests.fakes.mcp import (
+    FakeServiceLayerRecorder,
+    MCPToolCall,
+)
+from tests.fakes.runpod import (
+    FakePodStateMachine,
+    FakeRunPodBilling,
+    FakeRunPodLB,
+    FakeRunPodQueue,
+    FakeRunPodRest,
+    FakeRunPodServerless,
+    FakeRunPodTemplate,
+    FakeRunPodTemplateSdk,
+    QueuedJob,
+    RunPodBillingData,
+    RunPodBillingFake,
+    RunPodLBFake,
+    RunPodQueueFake,
+    RunPodResponseFactory,
+    RunPodRestCall,
+    RunPodRestFake,
+    RunPodServerlessFake,
+    RunPodTemplateFake,
+    _FakeRunPod,
+    bge_m3_lb_provider,
+)
+
+__all__ = [
+    "FakeBlobStore",
+    "FakeGarage",
+    "_FakeGarage",
+    "FakePodStateMachine",
+    "FakeRunPodBilling",
+    "FakeRunPodLB",
+    "FakeRunPodQueue",
+    "FakeRunPodRest",
+    "FakeRunPodServerless",
+    "FakeRunPodTemplate",
+    "FakeRunPodTemplateSdk",
+    "FakeServiceLayerRecorder",
+    "MCPToolCall",
+    "QueuedJob",
+    "RunPodBillingData",
+    "RunPodBillingFake",
+    "RunPodLBFake",
+    "RunPodQueueFake",
+    "RunPodResponseFactory",
+    "RunPodRestCall",
+    "RunPodRestFake",
+    "RunPodServerlessFake",
+    "RunPodTemplateFake",
+    "_FakeRunPod",
+    "bge_m3_lb_provider",
+]

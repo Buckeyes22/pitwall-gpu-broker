@@ -1,0 +1,202 @@
+name: ${PITWALL_COMPOSE_PROJECT:-pitwall}
+
+x-pitwall-service: &pitwall-service
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  postgres:
+    image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pitwall}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a strong unique value}
+      POSTGRES_DB: ${POSTGRES_DB:-pitwall}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    restart: unless-stopped
+    command:
+      - sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD to a strong unique value}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - backend
+
+  migrate:
+    <<: *pitwall-service
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: pitwall-gpu-broker/api:${PITWALL_IMAGE_TAG:-local}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pitwall}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pitwall}
+    command: ["pitwall-gpu-broker", "db", "migrate"]
+    networks:
+      - backend
+
+  api:
+    <<: *pitwall-service
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: pitwall-gpu-broker/api:${PITWALL_IMAGE_TAG:-local}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pitwall}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pitwall}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      RUNPOD_API_KEY: ${RUNPOD_API_KEY:?set RUNPOD_API_KEY}
+      PITWALL_API_TOKEN: ${PITWALL_API_TOKEN:?set PITWALL_API_TOKEN}
+      PITWALL_API_SCOPED_TOKENS: ${PITWALL_API_SCOPED_TOKENS:-}
+      PITWALL_ADMIN_SECRET: ${PITWALL_ADMIN_SECRET:?set PITWALL_ADMIN_SECRET}
+      PITWALL_WEBHOOK_ENCRYPTION_KEYS: ${PITWALL_WEBHOOK_ENCRYPTION_KEYS:?set PITWALL_WEBHOOK_ENCRYPTION_KEYS}
+      PITWALL_WEBHOOK_ENCRYPTION_CURRENT_KEY: ${PITWALL_WEBHOOK_ENCRYPTION_CURRENT_KEY:-v1}
+      PITWALL_INBOUND_RATE_LIMIT: ${PITWALL_INBOUND_RATE_LIMIT:-120/60s}
+      PITWALL_API_MAX_BODY_BYTES: ${PITWALL_API_MAX_BODY_BYTES:-8388608}
+      PITWALL_API_MAX_CONCURRENCY: ${PITWALL_API_MAX_CONCURRENCY:-100}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    ports:
+      - "${PITWALL_BIND_IP:-127.0.0.1}:8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    networks:
+      - backend
+      - egress
+
+  reconciler:
+    <<: *pitwall-service
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.reconciler
+    image: pitwall-gpu-broker/reconciler:${PITWALL_IMAGE_TAG:-local}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pitwall}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pitwall}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      RUNPOD_API_KEY: ${RUNPOD_API_KEY:?set RUNPOD_API_KEY}
+      PITWALL_WEBHOOK_ENCRYPTION_KEYS: ${PITWALL_WEBHOOK_ENCRYPTION_KEYS:?set PITWALL_WEBHOOK_ENCRYPTION_KEYS}
+      PITWALL_WEBHOOK_ENCRYPTION_CURRENT_KEY: ${PITWALL_WEBHOOK_ENCRYPTION_CURRENT_KEY:-v1}
+      PITWALL_RETENTION_MODE: ${PITWALL_RETENTION_MODE:-archive-purge}
+      PITWALL_RETENTION_DAYS: ${PITWALL_RETENTION_DAYS:-90}
+      PITWALL_RETENTION_BATCH_SIZE: ${PITWALL_RETENTION_BATCH_SIZE:-1000}
+      PITWALL_ARCHIVE_DIR: /var/lib/pitwall/archive
+      PITWALL_ARCHIVE_ENCRYPTION_KEY: ${PITWALL_ARCHIVE_ENCRYPTION_KEY:?set a URL-safe base64 32-byte archive key}
+      PITWALL_ARCHIVE_ENCRYPTION_KEY_VERSION: ${PITWALL_ARCHIVE_ENCRYPTION_KEY_VERSION:-v1}
+    volumes:
+      - retention-archive:/var/lib/pitwall/archive
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    networks:
+      - backend
+      - egress
+
+  webhook:
+    <<: *pitwall-service
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.webhook
+    image: pitwall-gpu-broker/webhook:${PITWALL_IMAGE_TAG:-local}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pitwall}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pitwall}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      PITWALL_WEBHOOK_SECRET: ${PITWALL_WEBHOOK_SECRET:?set PITWALL_WEBHOOK_SECRET}
+      PITWALL_WEBHOOK_PREVIOUS_SECRETS: ${PITWALL_WEBHOOK_PREVIOUS_SECRETS:-[]}
+      PITWALL_WEBHOOK_MAX_BODY_BYTES: ${PITWALL_WEBHOOK_MAX_BODY_BYTES:-1048576}
+      PITWALL_WEBHOOK_RATE_LIMIT: ${PITWALL_WEBHOOK_RATE_LIMIT:-120/60s}
+      PITWALL_WEBHOOK_MAX_CONCURRENCY: ${PITWALL_WEBHOOK_MAX_CONCURRENCY:-50}
+    ports:
+      - "${PITWALL_BIND_IP:-127.0.0.1}:8082:8082"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    networks:
+      - backend
+      - egress
+
+  cost-exporter:
+    <<: *pitwall-service
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cost-exporter
+    image: pitwall-gpu-broker/cost-exporter:${PITWALL_IMAGE_TAG:-local}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pitwall}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pitwall}
+      PITWALL_MONTHLY_BUDGET_USD: ${PITWALL_MONTHLY_BUDGET_USD:-50.0}
+      PITWALL_COST_EXPORTER_MAX_CONCURRENCY: ${PITWALL_COST_EXPORTER_MAX_CONCURRENCY:-20}
+    ports:
+      - "${PITWALL_BIND_IP:-127.0.0.1}:9109:9109"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    networks:
+      - backend
+      - egress
+
+networks:
+  backend:
+    internal: true
+  egress:
+
+volumes:
+  postgres-data:
+  redis-data:
+  retention-archive:

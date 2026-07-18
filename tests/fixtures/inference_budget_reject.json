@@ -1,0 +1,5 @@
+{
+  "capability_id": "embedding.bge-m3",
+  "provider_id": "prov_bge_m3_lb_runpod",
+  "texts": ["budget rejection probe"]
+}

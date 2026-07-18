@@ -1,0 +1,13 @@
+providers:
+  - name: demo-runpod-lb
+    capability: embedding.demo
+    endpoint_id: eptest00000000
+    provider_type: serverless_lb
+    region: US-EXAMPLE-1
+    gpu_class: NVIDIA L4
+    priority: 1
+    cost:
+      mode: per_second
+      per_second_active: "0.001"
+    workers:
+      workers_min: 0

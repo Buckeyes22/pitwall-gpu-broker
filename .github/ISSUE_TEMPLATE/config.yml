@@ -1,0 +1,9 @@
+---
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/buckeyes22/pitwall-gpu-broker/discussions
+    about: Ask questions, share ideas, and connect with the community
+  - name: Documentation
+    url: https://github.com/buckeyes22/pitwall-gpu-broker/tree/main/docs
+    about: Setup guides, architecture, and operator documentation in the repo

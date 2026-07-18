@@ -1,0 +1,33 @@
+{
+  "allowed_license_terms": [
+    "0BSD",
+    "Apache-2.0",
+    "BSD",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "PSF-2.0",
+    "Python-2.0",
+    "Unlicense"
+  ],
+  "review_required_packages": {
+    "certifi": {
+      "version": "2026.5.20",
+      "license": "MPL-2.0"
+    },
+    "paramiko": {
+      "version": "5.0.0",
+      "license": "LGPL-2.1"
+    },
+    "tqdm": {
+      "version": "4.67.3",
+      "license": "MPL-2.0 AND MIT"
+    }
+  },
+  "denied_license_terms": [
+    "AGPL",
+    "GPL-2.0",
+    "GPL-3.0",
+    "SSPL"
+  ]
+}

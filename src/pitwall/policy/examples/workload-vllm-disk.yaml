@@ -1,0 +1,14 @@
+version: 1
+policies:
+  - id: workload.vllm-container-disk
+    target: workload
+    description: vLLM workloads must reserve enough container disk for model bootstrap.
+    when:
+      - path: name
+        operator: equals
+        value: vllm
+    rules:
+      - path: disk_gb
+        operator: gte
+        value: 80
+        message: vLLM workload container disk must be at least 80GB
