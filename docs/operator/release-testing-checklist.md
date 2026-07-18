@@ -30,7 +30,8 @@ uv run pytest -m release tests/release -q
 > **Critical:** `tests/release/conftest.py` un-skips the tier tests ONLY when the pytest
 > `-m` option is the exact string `release`. `-m "release and not live"` silently skips the
 > entire release gate. The `live`-marked envelopes (BGE-M3 smoke, kill drill) self-skip
-> without `RUNPOD_LIVE=1`; that is expected for a hermetic cut.
+> without `RUNPOD_LIVE=1`; that is expected for a hermetic cut. Project CI never supplies
+> provider credentials or enables live execution.
 
 Tiers: **dry-run** (routing + cost estimation, no spend), **sovereignty** (region/residency),
 **BGE-M3 smoke** (`live`), **kill drill** (`live`).
@@ -77,4 +78,6 @@ means a gate failed. Artifacts land under `dist/alpha-artifacts/`.
 - [ ] Sections 1–6 green locally.
 - [ ] `release-readiness.yml` green on the release PR.
 - [ ] `run-alpha-readiness.sh` exit 0 against staging infra.
-- [ ] Live tiers (BGE-M3 smoke, kill drill) run with `RUNPOD_LIVE=1` on the dispatch job.
+- [ ] Optional live tiers, if selected by a deploying operator, use only that operator's
+      local credentials, endpoints, budget, and cleanup procedure; they do not gate the
+      project release.

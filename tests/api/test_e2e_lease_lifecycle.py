@@ -27,7 +27,7 @@ _MIGRATION_DIR = _REPO_ROOT / "db" / "migrations"
 _CAPABILITY_ID = "cap_pod"
 _CAPABILITY_NAME = "pod.nginx"
 _PROVIDER_ID = "prov_pod"
-_LIVE_RUN_ID = os.getenv("PITWALL_LIVE_RUN_ID", "local")
+_LIVE_RUN_ID = os.getenv("PITWALL_LIVE_RUN_ID", f"local_{os.getpid()}")
 if not re.fullmatch(r"[A-Za-z0-9_-]+", _LIVE_RUN_ID):
     raise ValueError("PITWALL_LIVE_RUN_ID contains unsafe pod-name characters")
 _PROVIDER_NAME = f"prov_pod_acceptance_{_LIVE_RUN_ID}"

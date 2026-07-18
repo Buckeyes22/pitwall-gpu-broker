@@ -15,9 +15,6 @@ concurrency:
 jobs:
   readiness:
     uses: ./.github/workflows/release-readiness.yml
-    with:
-      release_candidate: true
-    secrets: inherit
 
   package:
     needs: readiness

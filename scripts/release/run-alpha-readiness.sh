@@ -1,9 +1,9 @@
 #!/bin/bash
 # run-alpha-readiness.sh — local public-alpha release-readiness harness.
 #
-# Runs the exact release-marker suite and strict sixteen-check audit. This is a
-# local rehearsal; the release-readiness workflow's live job and the external
-# gates in docs/release/external-release-gates.md remain independently required.
+# Runs the exact release-marker suite and strict sixteen-check audit. Project
+# publication is hermetic; optional provider-live execution belongs to operators
+# using credentials and infrastructure they own.
 
 set -euo pipefail
 
@@ -40,9 +40,9 @@ fi
 
 if [[ -n "${RUNPOD_API_KEY}" ]]; then
     export RUNPOD_API_KEY
-    log "RUNPOD_API_KEY is set — live RunPod smoke tests can be selected"
+    log "RUNPOD_API_KEY is set for optional operator-owned local live tests"
 else
-    log "RUNPOD_API_KEY is not set — this is a local rehearsal, not release approval"
+    log "RUNPOD_API_KEY is not set — expected for hermetic project release checks"
 fi
 
 log "Artifact directory: ${ARTIFACT_DIR}"
@@ -73,4 +73,4 @@ if ! uv run python -m pitwall.audit.sixteen_check --strict | tee -a "${REPORT_FI
     fail "16-check audit failed under --strict"
 fi
 
-log "All local public-alpha checks passed; external and live gates remain separate"
+log "All local hermetic public-alpha checks passed"

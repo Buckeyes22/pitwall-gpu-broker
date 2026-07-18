@@ -28,17 +28,20 @@ are complete.
       (2026-07-18).
 - [x] GitHub Discussions is enabled for public support questions and its contact
       link resolves (verified 2026-07-18).
-- [x] Protected `ghcr-staging`, `ghcr`, `github-release`, and
-      `live-provider-acceptance` environments have least-privilege reviewers.
+- [x] Protected `ghcr-staging`, `ghcr`, and `github-release` environments have
+      least-privilege reviewers.
       Python registry environments are required only when that deferred channel
-      is enabled. All four environments require `Buckeyes22` approval and
+      is enabled. All three environments require `Buckeyes22` approval and
       disable administrator bypass (verified 2026-07-18).
+- [x] Release automation is hermetic and contains no RunPod credential, endpoint,
+      paid-provider, or live-test path. Operators may run live tests separately
+      with credentials they own; those credentials never gate project artifact
+      publication.
 - [ ] GitHub Release permissions, attestations, and GHCR package permissions are
       bound to the exact repository/workflow/environment. Python registry trusted
       publishers are required only when that deferred channel is enabled.
 - [ ] A backup release/security maintainer has tested recovery access, or the
       project lead records explicit acceptance of the single-maintainer risk.
-- [ ] Live RunPod acceptance passes with an approved spending cap and cleanup.
 - [ ] The exact GitHub Release wheel and sdist pass isolated install/smoke tests,
       and the exact GHCR staging image digests pass pull/smoke tests. TestPyPI is
       required only when that deferred channel is enabled.

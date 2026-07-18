@@ -40,7 +40,8 @@ already self-skip when live execution is not enabled.
 | API fuzz | Every generated OpenAPI operation avoids unexpected server errors |
 | Chaos | Retry, outage, termination, and safe-degradation behavior |
 | Mutation | High-risk cost, rate-limit, and lease-state oracles reject behavioral mutants |
-| Release | Artifacts, operational journeys, strict audit, live acceptance, and publication policy |
+| Release | Artifacts, operational journeys, strict audit, and publication policy |
+| Operator live | Optional real-provider validation using operator-owned credentials and resources |
 
 Production bug fixes require a regression test at the lowest meaningful layer. Database
 correctness, locking, migrations, and restore behavior require real-PostgreSQL integration tests;
@@ -114,15 +115,16 @@ risk domain.
 `coverage-combined`. The mutation smoke lane is diagnostic; the blocking mutation floor runs in
 `release-readiness.yml`.
 
-`.github/workflows/release-readiness.yml` provides blocking security, mutation, hermetic, and live
-jobs. Its hermetic job validates the strict sixteen-check audit, exact release-marker suite,
-candidate policy, OpenAPI compatibility, artifacts, and combined coverage. Its live job is a
-separate external release gate and must not be inferred from local skips.
+`.github/workflows/release-readiness.yml` provides blocking security, mutation, and hermetic
+jobs. The hermetic job validates the strict sixteen-check audit, exact release-marker suite,
+candidate policy, OpenAPI compatibility, artifacts, and combined coverage. The workflow neither
+requests provider credentials nor enables live execution. Live tests are separate operator-side
+checks using credentials and resources owned by the deploying operator.
 
 The release workflow publishes only after readiness succeeds. It rebuilds Python artifacts twice,
-checks byte identity, validates wheel/sdist contents, exercises TestPyPI, signs artifact/image
-provenance through GitHub attestations, generates SBOMs, scans images, and promotes the exact tested
-digests.
+checks byte identity, validates wheel/sdist contents, signs artifact/image provenance through
+GitHub attestations, generates SBOMs, scans images, and promotes the exact tested digests. The
+deferred TestPyPI/PyPI channel runs only when its separate enable variable is deliberately set.
 
 ## 8. Commands
 

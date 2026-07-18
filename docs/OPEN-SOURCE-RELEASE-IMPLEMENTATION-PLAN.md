@@ -37,7 +37,7 @@ approved. The authoritative reusable checklist for those remaining actions is
 | REL-001, REL-002 | **Verified repository implementation.** A disabled-by-default protected release state machine, immutable candidate validation, version/changelog validation, compatibility checks, and rollback documentation exist. | The protected GHCR/GitHub Release environments, signed tag, and release approval remain external. Deferred Python registries have a separate enable gate. |
 | REL-003, REL-004 | Reproducible double builds, manifest inspection, clean installation, checksums, SBOMs, image scans, staging promotion checks, and signing/attestation steps are implemented. | **GitHub-first external gate:** verify GHCR staging/production digests, attached artifacts, signature/provenance, and withdrawal/deprecation procedures. TestPyPI/PyPI rehearsals remain deferred. |
 | TST-001 through TST-003 | **Verified.** Wheel and sdist install/migrate/boot outside the checkout; risk coverage and mutation floors pass; concurrency, upgrade/restore, failure, Python, and dependency compatibility matrices are implemented. | Hosted scheduled compatibility results become additional release evidence. |
-| TST-004 | Live tests are isolated behind an explicit protected release environment, spend controls, and mandatory non-skipping credentials. | **External gate:** run approved paid RunPod/GPU acceptance and verify cleanup. |
+| TST-004 | Live-provider tests remain optional, operator-side tests using operator-owned credentials. GitHub release automation is hermetic and cannot request or inherit a maintainer RunPod credential. | No publication gate remains; users validate their own provider account and resources when enabling live operation. |
 | TST-005 | **Verified.** Executable documentation/user journeys, internal-link validation, artifact smoke, image smoke, and clean-machine contracts are implemented. The canonical source and Discussions links resolve after the reviewed initial source push. | No repository work remains. |
 | DAT-001 through DAT-004 | **Verified repository implementation.** Data inventory/privacy posture, encrypted webhook and archive secret handling, bounded retention/archive/purge lifecycle, export/deletion behavior, and redacted logging/backup paths are documented and tested. | **External gate:** privacy reviewer approval and any future hosted-service assessment. |
 | OPS-001 through OPS-004 | **Verified.** Immutable/checksummed migrations, concurrent migration locking, upgrade/recovery guidance, real safe backup/restore drill, dependency-aware readiness, shutdown/resource controls, metrics/alerts, incident and support procedures are implemented. | External on-call contacts and hosted alert routing require owner configuration. |
@@ -1058,22 +1058,25 @@ and attach the verification evidence required by the item.
   - Metadata claims equal the tested matrix.
   - Failure tests demonstrate bounded retry and recoverable state.
 
-### TST-004 — Provider and GPU live acceptance
+### TST-004 — Operator-owned provider acceptance
 
-- Priority: Alpha Blocker only for features claimed in the alpha
-- Owner: Runtime maintainer
-- Problem: No release evidence covers live RunPod/GPU lifecycle or the built
-  worker image.
+- Priority: Operator validation; not a project publication blocker
+- Owner: Deploying operator
+- Problem: A self-hosted open-source release must not require a maintainer's
+  provider credential or paid cloud account. Live behavior depends on the
+  operator's own RunPod endpoints, credentials, images, and budget.
 - Implementation:
-  - Use isolated credentials, spend caps, timeouts, and guaranteed teardown.
+  - Keep GitHub release workflows hermetic and free of provider secrets.
+  - Offer explicitly selected local live tests for operators who choose to run
+    them with their own isolated credentials and spend limits.
   - Test provision, readiness, work execution, renewal, expiry, cancellation,
     teardown, reconciliation, and orphan cleanup.
-  - Run the released image digest, not source code.
-  - Record cost and resource cleanup evidence without leaking identifiers.
+  - Never upload operator credentials or identifiers to the project repository.
 - Dependencies: DG-02, WRK-001, IMG-003.
 - Acceptance criteria:
-  - Every advertised live-provider path has a passing, non-skipped release result.
-  - Teardown verification proves no test resources remain.
+  - Project release checks use fakes and contract tests for every provider path.
+  - Optional live-test documentation makes ownership, cost, and cleanup the
+    deploying operator's explicit responsibility.
 
 ### TST-005 — Documentation and clean-machine journeys
 
@@ -1456,12 +1459,12 @@ non-sensitive verification outputs needed by consumers.
 | Vulnerable dependency ships | High | High | SEC-004 | Block unless expiring VEX |
 | Local/private files leak through sdist/image context | High | High | PKG-004, HYG-001 | Block |
 | Release publishes twice or before tests | Medium | High | REL-001 | Block |
-| Readiness report hides skipped live tests | High | High | CI-003 | Block |
+| Release CI requests a maintainer provider credential | Medium | Critical | TST-004, SEC-005 | Never permitted |
 | Secrets leak through logs/process argv/database | Medium/High | High | SEC-005, DAT-002, OPS-002 | Block |
 | Retention duplicates rather than removes sensitive data | High | High | DAT-003 | Alpha required |
 | Unclear copyright or source authority | Unknown | Critical | GOV-002 | Block |
 | Single maintainer/security responder becomes unavailable | Medium | High | GOV-004 | Disclose and mitigate |
-| GPU/provider tests leave paid resources | Medium | High | TST-004, OPS-004 | Block feature claim |
+| Operator live tests leave paid resources | Medium | High | TST-004, OPS-004 | Operator opt-in and cleanup required |
 | Stale SBOM/license report misleads consumers | Certain | Medium/High | SBOM-001, GOV-003 | Alpha required |
 | Public docs cause insecure or broken setup | High | High | DOC-001, DOC-002, TST-005 | Block misleading claim |
 
