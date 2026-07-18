@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
-from tools.ci.check_markdown_links import anchors, check_internal, link_targets
+from tools.ci import check_markdown_links
+from tools.ci.check_markdown_links import anchors, check_internal, link_targets, markdown_files
 
 
 def test_link_targets_support_inline_images_and_references() -> None:
@@ -27,3 +29,19 @@ def test_internal_check_reports_missing_file_and_anchor(tmp_path: Path) -> None:
     assert len(failures) == 2
     assert any("missing anchor #missing" in failure for failure in failures)
     assert any("missing target 'gone.md'" in failure for failure in failures)
+
+
+def test_markdown_inventory_uses_tracked_and_nonignored_files(tmp_path: Path, monkeypatch) -> None:
+    completed = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout=b"README.md\0docs/guide.md\0src/module.py\0",
+        stderr=b"",
+    )
+    monkeypatch.setattr(
+        check_markdown_links.subprocess,
+        "run",
+        lambda *_args, **_kwargs: completed,
+    )
+
+    assert markdown_files(tmp_path) == [tmp_path / "README.md", tmp_path / "docs/guide.md"]

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import os
 import re
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -20,8 +22,20 @@ _IGNORED_SCHEMES = {"app", "data", "mailto", "tel"}
 
 
 def markdown_files(root: Path) -> list[Path]:
-    ignored = {".git", ".venv", ".mypy_cache", ".pytest_cache", "htmlcov", "node_modules"}
-    return sorted(path for path in root.rglob("*.md") if not ignored.intersection(path.parts))
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = os.fsdecode(result.stderr).strip()
+        raise RuntimeError(message or "git file inventory failed")
+    return sorted(
+        root / os.fsdecode(path)
+        for path in result.stdout.split(b"\0")
+        if path and os.fsdecode(path).lower().endswith(".md")
+    )
 
 
 def link_targets(text: str) -> list[str]:

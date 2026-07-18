@@ -73,7 +73,7 @@ approved. The authoritative reusable checklist for those remaining actions is
   fixed HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations.
 - Release rehearsal: 17 hermetic release-tier checks pass, eight live-provider
   envelopes correctly skip locally, and the strict audit passes 19/19 checks.
-- Documentation: all 70 repository-local Markdown files pass link/anchor checks;
+- Documentation: all 66 public-tree Markdown files pass link/anchor checks;
   the canonical source and Discussions links resolve on the public repository.
 - Static and policy gates: Ruff (560 files), strict Mypy (201 source files),
   OpenAPI compatibility, Actionlint/workflow policy, repository text/policy
