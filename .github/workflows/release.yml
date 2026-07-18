@@ -72,7 +72,7 @@ jobs:
           output-file: artifacts/package/pitwall-gpu-broker-${{ github.ref_name }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-distributions
           path: |
@@ -80,7 +80,7 @@ jobs:
             dist/*.tar.gz
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-evidence
           path: artifacts/package/
@@ -154,7 +154,7 @@ jobs:
           docker image inspect --format='{{.Id}}' \
             pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
             > artifacts/image/${{ matrix.service }}.digest
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image-${{ matrix.service }}
           path: artifacts/image/
@@ -182,7 +182,7 @@ jobs:
           done
       - name: Run canonical Compose and hardened-image smoke
         run: scripts/release/smoke_compose.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: compose-smoke-evidence
@@ -226,7 +226,7 @@ jobs:
           docker pull "$digest"
           test "$(docker run --rm "$digest" pitwall-gpu-broker --version)" = "${GITHUB_REF_NAME#v}"
           printf '%s\n' "$digest" > artifacts/image/${{ matrix.service }}.staging-digest
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: staged-image-${{ matrix.service }}
           path: artifacts/image/${{ matrix.service }}.staging-digest
