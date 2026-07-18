@@ -15,7 +15,12 @@ are complete.
       unmodified Paramiko, certifi, and tqdm distribution in GHCR images.
 - [x] Canonical `https://github.com/buckeyes22/pitwall-gpu-broker` repository exists
       publicly with `main` default (verified by the project owner on 2026-07-18).
-- [ ] Branch rules require CI, CodeQL, DCO, review, and no force-push/deletion.
+- [x] `main` branch protection requires 22 GitHub-Actions-bound CI, CodeQL,
+      DCO/lint, container, security, mutation, and release-readiness checks;
+      one CODEOWNERS approval; stale-review dismissal; last-push approval;
+      resolved conversations; linear history; and no force-push/deletion.
+      Emergency administrator bypass remains available while the repository has
+      one maintainer (API-verified 2026-07-18).
 - [x] Private Vulnerability Reporting, secret scanning, push protection,
       Dependabot alerts, and security updates are enabled and API-verified
       (2026-07-18).
