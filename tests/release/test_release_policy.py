@@ -59,9 +59,7 @@ def test_only_deferred_python_registry_requires_a_separate_enable_gate() -> None
 
 
 def test_live_acceptance_is_dispatchable_bounded_and_non_skipping() -> None:
-    workflow = (ROOT / ".github/workflows/release-readiness.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (ROOT / ".github/workflows/release-readiness.yml").read_text(encoding="utf-8")
     live_job = workflow.split("  live:", 1)[1]
 
     assert workflow.count("release_candidate:") == 2
@@ -78,9 +76,7 @@ def test_live_acceptance_is_dispatchable_bounded_and_non_skipping() -> None:
 
 def test_live_endpoint_ids_are_external_inputs() -> None:
     lb_test = (ROOT / "tests/api/test_e2e_sync_inference.py").read_text(encoding="utf-8")
-    queue_test = (ROOT / "tests/api/test_e2e_async_job_webhook.py").read_text(
-        encoding="utf-8"
-    )
+    queue_test = (ROOT / "tests/api/test_e2e_async_job_webhook.py").read_text(encoding="utf-8")
 
     assert "PITWALL_LIVE_LB_ENDPOINT_ID" in lb_test
     assert "PITWALL_LIVE_QUEUE_ENDPOINT_ID" in queue_test

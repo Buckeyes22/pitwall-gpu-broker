@@ -40,9 +40,13 @@ jobs:
         run: |
           uv run bandit -c pyproject.toml -r src/pitwall -ll -ii \
             -b tools/security/bandit-baseline.json
-          IGNORES=$(sed -E 's/#.*//' tools/security/pip-audit-ignore.txt | tr '\n' ' ' \
-            | xargs -r -n1 printf -- '--ignore-vuln %s ')
-          uv run pip-audit -r <(uv export --frozen --format requirements-txt --no-hashes) $IGNORES
+          audit_args=()
+          while IFS= read -r vulnerability_id; do
+            test -n "$vulnerability_id" && audit_args+=(--ignore-vuln "$vulnerability_id")
+          done < <(sed -E 's/#.*//' tools/security/pip-audit-ignore.txt)
+          uv run pip-audit -r \
+            <(uv export --frozen --format requirements-txt --no-hashes) \
+            "${audit_args[@]}"
       - name: Semgrep and runtime license policy
         env:
           SEMGREP_SEND_METRICS: "off"
