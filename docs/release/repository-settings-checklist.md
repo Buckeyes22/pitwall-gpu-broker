@@ -6,6 +6,7 @@ Record screenshots or API output privately; do not store tokens in the repo.
 | Control | Required state |
 | --- | --- |
 | Default branch | `main`; deletion and force-push disabled |
+| Release tags | Active `v*` ruleset; verified commits required; deletion and force-updates disabled |
 | Pull requests | At least one approval, stale approvals dismissed, CODEOWNERS required |
 | Required checks | lint, format, typecheck, tests, integration, coverage, security, mutation, CodeQL, DCO, release readiness |
 | Actions | GitHub-hosted runners; read-only default token; approved immutable actions only |

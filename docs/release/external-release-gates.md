@@ -20,7 +20,9 @@ are complete.
       one CODEOWNERS approval; stale-review dismissal; last-push approval;
       resolved conversations; linear history; and no force-push/deletion.
       Emergency administrator bypass remains available while the repository has
-      one maintainer (API-verified 2026-07-18).
+      one maintainer. An active `v*` tag ruleset requires verified commits and
+      blocks tag deletion and force-updates without bypass (API-verified
+      2026-07-18).
 - [x] Private Vulnerability Reporting, secret scanning, push protection,
       Dependabot alerts, and security updates are enabled and API-verified
       (2026-07-18).
