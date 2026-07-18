@@ -27,7 +27,7 @@ from tests.api._contract_helpers import build_app, client_for
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
 _PG_URL_ENV = "PITWALL_TEST_DATABASE_URL"
-_RUNPOD_ENDPOINT_ID = "rdhwjnr3j6b98y"
+_QUEUE_ENDPOINT_ENV = "PITWALL_LIVE_QUEUE_ENDPOINT_ID"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MIGRATION_DIR = _REPO_ROOT / "db" / "migrations"
 _POLL_TIMEOUT_S = 480.0
@@ -69,6 +69,9 @@ async def _apply_all_migrations(conn: asyncpg.Connection) -> None:
 
 
 async def _seed_qwen3_queue_provider(conn: asyncpg.Connection) -> None:
+    endpoint_id = os.getenv(_QUEUE_ENDPOINT_ENV, "")
+    if not endpoint_id:
+        pytest.fail(f"{_QUEUE_ENDPOINT_ENV} is required for live acceptance")
     await conn.execute(
         """
         INSERT INTO pitwall.capabilities (
@@ -97,7 +100,7 @@ async def _seed_qwen3_queue_provider(conn: asyncpg.Connection) -> None:
         "cap_qwen3",
         "prov_qwen3",
         "serverless_queue",
-        _RUNPOD_ENDPOINT_ID,
+        endpoint_id,
         {
             "cost": {
                 "mode": "per_second",
@@ -211,6 +214,9 @@ async def test_async_job_webhook_round_trips_real_runpod_queue_result(
     clear_app_module: None,
 ) -> None:
     _skip_unless_live_inputs_present()
+    endpoint_id = os.getenv(_QUEUE_ENDPOINT_ENV, "")
+    if not endpoint_id:
+        pytest.fail(f"{_QUEUE_ENDPOINT_ENV} is required for live acceptance")
 
     from pitwall.config import load_settings_from_env
     from pitwall.core.inference import create_and_dispatch_job
@@ -241,7 +247,7 @@ async def test_async_job_webhook_round_trips_real_runpod_queue_result(
 
     status_payload = await _poll_until_completed(
         api_key=settings.runpod_api_key,
-        endpoint_id=_RUNPOD_ENDPOINT_ID,
+        endpoint_id=endpoint_id,
         job_id=runpod_job_id,
     )
     real_output = status_payload["output"]

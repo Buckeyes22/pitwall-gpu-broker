@@ -18,6 +18,7 @@ from tests.api._contract_helpers import build_app, client_for
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
 _PG_URL_ENV = "PITWALL_TEST_DATABASE_URL"
+_LB_ENDPOINT_ENV = "PITWALL_LIVE_LB_ENDPOINT_ID"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MIGRATION_DIR = _REPO_ROOT / "db" / "migrations"
 
@@ -43,6 +44,9 @@ async def _apply_all_migrations(conn: asyncpg.Connection) -> None:
 
 
 async def _seed_bge_m3(conn: asyncpg.Connection) -> None:
+    endpoint_id = os.getenv(_LB_ENDPOINT_ENV, "")
+    if not endpoint_id:
+        pytest.fail(f"{_LB_ENDPOINT_ENV} is required for live acceptance")
     await conn.execute(
         """
         INSERT INTO pitwall.capabilities (
@@ -71,9 +75,9 @@ async def _seed_bge_m3(conn: asyncpg.Connection) -> None:
         "cap_bge_m3",
         "prov_bge_m3",
         "serverless_lb",
-        "eptest00000000",
+        endpoint_id,
         {
-            "lb_base_url": "https://eptest00000000.api.runpod.ai",
+            "lb_base_url": f"https://{endpoint_id}.api.runpod.ai",
             "cost": {
                 "mode": "per_second",
                 "per_second_active": "0.000123",

@@ -56,3 +56,33 @@ def test_only_deferred_python_registry_requires_a_separate_enable_gate() -> None
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     assert workflow.count("vars.PITWALL_PYPI_RELEASE_ENABLED == 'true'") == 2
     assert "PITWALL_GHCR_RELEASE_ENABLED" not in workflow
+
+
+def test_live_acceptance_is_dispatchable_bounded_and_non_skipping() -> None:
+    workflow = (ROOT / ".github/workflows/release-readiness.yml").read_text(
+        encoding="utf-8"
+    )
+    live_job = workflow.split("  live:", 1)[1]
+
+    assert workflow.count("release_candidate:") == 2
+    assert "PITWALL_LIVE_SPEND_CAP_USD" in live_job
+    assert "cap > 0 && cap <= 5" in live_job
+    assert "docker-compose.testinfra.yml up -d --wait" in live_job
+    assert "tests/api/test_e2e_sync_inference.py" in live_job
+    assert "tests/api/test_e2e_lease_lifecycle.py" in live_job
+    assert "tests/api/test_e2e_async_job_webhook.py" in live_job
+    assert "pytest tests/" not in live_job
+    assert "cleanup_live_runpod.py" in live_job
+    assert "docker-compose.testinfra.yml down -v" in live_job
+
+
+def test_live_endpoint_ids_are_external_inputs() -> None:
+    lb_test = (ROOT / "tests/api/test_e2e_sync_inference.py").read_text(encoding="utf-8")
+    queue_test = (ROOT / "tests/api/test_e2e_async_job_webhook.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "PITWALL_LIVE_LB_ENDPOINT_ID" in lb_test
+    assert "PITWALL_LIVE_QUEUE_ENDPOINT_ID" in queue_test
+    assert "eptest00000000" not in lb_test
+    assert "rdhwjnr3j6b98y" not in queue_test

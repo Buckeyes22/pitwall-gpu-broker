@@ -223,8 +223,11 @@ async def test_live_lease_lifecycle_provisions_and_tears_down_real_runpod_pod(
     if not runpod_api_key or runpod_api_key == "test-key":
         pytest.skip("RUNPOD_API_KEY must be set to a real RunPod key")
 
-    monkeypatch.setenv("PITWALL_MONTHLY_BUDGET_USD", "5.00")
-    monkeypatch.setenv("PITWALL_PER_REQUEST_MAX_USD", "1.00")
+    spend_cap = os.getenv("PITWALL_LIVE_SPEND_CAP_USD", "")
+    if not spend_cap:
+        pytest.fail("PITWALL_LIVE_SPEND_CAP_USD is required for live acceptance")
+    monkeypatch.setenv("PITWALL_MONTHLY_BUDGET_USD", spend_cap)
+    monkeypatch.setenv("PITWALL_PER_REQUEST_MAX_USD", spend_cap)
     monkeypatch.setenv("R2_TEMP_CREDENTIALS_ENABLED", "false")
     monkeypatch.setenv("PITWALL_R2_TEMP_CREDENTIALS_ENABLED", "false")
     for key in _R2_ENV_KEYS:
