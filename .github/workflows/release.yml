@@ -99,7 +99,7 @@ jobs:
         with:
           name: package-evidence
           path: evidence
-      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-checksums: evidence/SHA256SUMS
 
@@ -327,7 +327,7 @@ jobs:
           digest=$(docker image inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$VERSION")
           echo "name=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
-      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ${{ steps.push.outputs.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
