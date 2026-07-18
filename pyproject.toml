@@ -62,7 +62,7 @@ email = [
     "resend>=2.30,<3",
 ]
 tracing = [
-    "langfuse>=3,<4",
+    "langfuse>=3,<5",
 ]
 dev = [
     "pytest>=9.0.3,<10",
