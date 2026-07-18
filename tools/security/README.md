@@ -32,7 +32,8 @@
 
 ## detect-secrets
 - Baseline: `.secrets.baseline`. Pre-commit + CI both invoke the canonical
-  `uv run python tools/security/check_secrets.py` gate over every tracked file,
+  `uv run python tools/security/check_secrets.py` gate over every tracked and
+  non-ignored untracked file,
   including tests. It compares stable type/hash/file fingerprints, so timestamps
   and moved line numbers cannot hide or invent drift.
 - A new high-entropy string, any unreviewed entry, or a stale baseline item fails.

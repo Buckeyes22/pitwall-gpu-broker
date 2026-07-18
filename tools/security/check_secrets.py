@@ -10,12 +10,13 @@ and fixtures are intentionally included.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _ROOT = Path(__file__).resolve().parents[2]
 _BASELINE = _ROOT / ".secrets.baseline"
@@ -44,6 +45,19 @@ def _unreviewed(document: dict[str, Any]) -> list[tuple[str, int, str]]:
     ]
 
 
+def _candidate_files() -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=_ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = os.fsdecode(result.stderr).strip()
+        raise RuntimeError(message or "git file inventory failed")
+    return [os.fsdecode(path) for path in result.stdout.split(b"\0") if path]
+
+
 def _scan(baseline: Path) -> dict[str, Any]:
     executable = shutil.which("detect-secrets")
     if executable is None:
@@ -51,10 +65,11 @@ def _scan(baseline: Path) -> dict[str, Any]:
     command = [executable, "scan", "--no-verify", "--baseline", str(baseline)]
     for pattern in _EXCLUDES:
         command.extend(("--exclude-files", pattern))
+    command.extend(_candidate_files())
     result = subprocess.run(command, cwd=_ROOT, check=False, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "detect-secrets scan failed")
-    return json.loads(baseline.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(baseline.read_text(encoding="utf-8")))
 
 
 def main() -> int:
