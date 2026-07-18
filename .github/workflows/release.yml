@@ -125,7 +125,7 @@ jobs:
           docker build --platform linux/amd64 \
             --label org.opencontainers.image.revision=${{ github.sha }} \
             --label org.opencontainers.image.version=${{ github.ref_name }} \
-            --label org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY} \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --tag pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
             --file "${{ matrix.dockerfile }}" .
           docker save pitwall-gpu-broker/${{ matrix.service }}:${{ github.sha }} \
