@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-## [0.1.0a1] - 2026-07-17
+## [0.1.0a1] - 2026-07-18
 
 First public-alpha candidate: secure-by-default interfaces, scoped API
 authorization, atomic lease mutations, hardened signed webhooks, installed

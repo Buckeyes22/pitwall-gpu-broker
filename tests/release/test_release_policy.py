@@ -50,6 +50,15 @@ def test_github_first_release_requires_ghcr_but_not_deferred_pypi() -> None:
     assert "publish-pypi" not in github_release
     assert "name: python-distributions" in github_release
     assert "name: package-evidence" in github_release
+    assert "body_path: docs/releases/${{ github.ref_name }}.md" in github_release
+
+
+def test_release_candidate_requires_versioned_public_notes() -> None:
+    validator = _load("validate_candidate", ROOT / "scripts/release/validate_candidate.py")
+    assert validator.validate("v0.1.0a1", allow_dirty=True) == []
+    notes = ROOT / "docs/releases/v0.1.0a1.md"
+    assert notes.is_file()
+    assert "GitHub-first" in notes.read_text(encoding="utf-8")
 
 
 def test_only_deferred_python_registry_requires_a_separate_enable_gate() -> None:

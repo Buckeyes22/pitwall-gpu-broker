@@ -37,6 +37,10 @@ def validate(tag: str, *, allow_dirty: bool = False) -> list[str]:
         if release_date > date.today():
             errors.append("changelog release date cannot be in the future")
 
+    release_notes = ROOT / "docs" / "releases" / f"{tag}.md"
+    if not release_notes.is_file() or not release_notes.read_text(encoding="utf-8").strip():
+        errors.append(f"{release_notes.relative_to(ROOT)} must contain release notes")
+
     if not allow_dirty:
         status = subprocess.run(
             ["git", "status", "--porcelain=v1", "--untracked-files=all"],

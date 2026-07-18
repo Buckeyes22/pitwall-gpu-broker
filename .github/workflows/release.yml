@@ -341,6 +341,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: python-distributions
@@ -351,6 +354,7 @@ jobs:
           path: release-artifacts
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          body_path: docs/releases/${{ github.ref_name }}.md
           draft: false
           prerelease: true
           generate_release_notes: false
