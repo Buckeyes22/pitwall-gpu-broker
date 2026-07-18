@@ -16,13 +16,16 @@ are complete.
 - [x] Canonical `https://github.com/buckeyes22/pitwall-gpu-broker` repository exists
       publicly with `main` default (verified by the project owner on 2026-07-18).
 - [ ] Branch rules require CI, CodeQL, DCO, review, and no force-push/deletion.
-- [ ] Private Vulnerability Reporting, secret scanning, push protection,
-      Dependabot alerts, and security updates are enabled and tested.
-- [ ] GitHub Discussions is enabled for public support questions and its contact link works.
-- [ ] Protected `ghcr-staging`, `ghcr`, `github-release`, and
+- [x] Private Vulnerability Reporting, secret scanning, push protection,
+      Dependabot alerts, and security updates are enabled and API-verified
+      (2026-07-18).
+- [x] GitHub Discussions is enabled for public support questions and its contact
+      link resolves (verified 2026-07-18).
+- [x] Protected `ghcr-staging`, `ghcr`, `github-release`, and
       `live-provider-acceptance` environments have least-privilege reviewers.
       Python registry environments are required only when that deferred channel
-      is enabled.
+      is enabled. All four environments require `Buckeyes22` approval and
+      disable administrator bypass (verified 2026-07-18).
 - [ ] GitHub Release permissions, attestations, and GHCR package permissions are
       bound to the exact repository/workflow/environment. Python registry trusted
       publishers are required only when that deferred channel is enabled.

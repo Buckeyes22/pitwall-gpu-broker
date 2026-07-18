@@ -114,11 +114,12 @@ class TestDogfoodChecklistExists:
         assert _CHECKLIST_PATH.is_file(), f"Dogfood checklist missing: {_CHECKLIST_PATH}"
 
 
-class TestDogfoodChecklistReferences:
-    @pytest.fixture(scope="class")
-    def checklist_text(self) -> str:
-        return _CHECKLIST_PATH.read_text()
+@pytest.fixture(scope="class")
+def checklist_text() -> str:
+    return _CHECKLIST_PATH.read_text()
 
+
+class TestDogfoodChecklistReferences:
     def test_required_files_exist(self, checklist_text: str) -> None:
         refs = _extract_file_refs(checklist_text)
         missing: list[str] = []

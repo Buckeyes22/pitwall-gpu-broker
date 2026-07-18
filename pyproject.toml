@@ -65,8 +65,8 @@ tracing = [
     "langfuse>=3,<4",
 ]
 dev = [
-    "pytest>=8.3",
-    "pytest-asyncio>=0.24,<1",
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.4,<2",
     "pytest-cov>=6.0",
     "respx>=0.21,<1",
     "ruff>=0.8",
